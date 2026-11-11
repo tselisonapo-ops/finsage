@@ -4,7 +4,6 @@ import {
   useMemo,
   useState,
 } from "react";
-
 import {
   fetchCompanyCoa,
   type CoaAccount,
@@ -304,6 +303,16 @@ const LessorLeaseWizard: React.FC<Props> = ({
       security_deposit_separate_account: false,
       security_deposit_discount_deferred: false,
       security_deposit_account_code: null,
+
+      // Six deposit-metadata fields consumed by the patched
+      // preview_security_deposit_terms to resolve the deposit's
+      // legal nature and choose a treatment_branch.
+      asset_type: "",
+      jurisdiction: "South Africa",
+      deposit_refundability: "",
+      deposit_interest_requirement: "",
+      deposit_interest_beneficiary: "",
+      deposit_permitted_deductions: "",
 
       revenue_account_code:
         defaultLeaseIncomeAccount,
@@ -1101,6 +1110,70 @@ useEffect(() => {
       return "Select the contractual security deposit arrangement.";
     }
 
+    // -----------------------------------------------------
+    // Deposit-metadata validation -- the patched engine
+    // resolves the treatment_branch from these fields.
+    // -----------------------------------------------------
+    if (Number(form.security_deposit_amount || 0) > 0) {
+      const assetType = String(
+        form.asset_type || ""
+      ).trim();
+      if (!assetType) {
+        return "Select the underlying asset type so the deposit's legal nature can be resolved.";
+      }
+
+      const jurisdiction = String(
+        form.jurisdiction || ""
+      ).trim();
+      if (!jurisdiction) {
+        return "Select the jurisdiction that governs the deposit.";
+      }
+
+      const refundability = String(
+        form.deposit_refundability || ""
+      ).trim();
+      if (!refundability) {
+        return "Select whether the deposit is refundable, non-refundable, or partially refundable.";
+      }
+
+      const interestRequirement = String(
+        form.deposit_interest_requirement || ""
+      ).trim();
+      if (!interestRequirement) {
+        return "Select whether interest on the deposit is statutory, contractual, or none.";
+      }
+
+      const interestBeneficiary = String(
+        form.deposit_interest_beneficiary || ""
+      ).trim();
+      if (!interestBeneficiary) {
+        return "Select whether the deposit interest belongs to the lessee or the lessor.";
+      }
+
+      // South African residential property deposits are
+      // governed by the Rental Housing Act 50 of 1999 s4B:
+      // statutory interest, payable to the tenant. Refuse
+      // any combination that contradicts that rule rather
+      // than silently posting a discount gain.
+      const isSaResidential =
+        jurisdiction.toLowerCase() === "south africa" &&
+        assetType.toLowerCase() === "residential";
+
+      if (
+        isSaResidential &&
+        interestRequirement.toLowerCase() !== "statutory"
+      ) {
+        return "South African residential deposits must be treated as statutory interest-bearing under the Rental Housing Act 50 of 1999 s4B.";
+      }
+
+      if (
+        isSaResidential &&
+        interestBeneficiary.toLowerCase() !== "lessee"
+      ) {
+        return "Interest on a South African residential deposit belongs to the tenant under the Rental Housing Act 50 of 1999 s4B.";
+      }
+    }
+
     if (
       form.security_deposit_discount_deferred &&
       form.security_deposit_interest_bearing
@@ -1432,6 +1505,12 @@ useEffect(() => {
       security_deposit_separate_account: false,
       security_deposit_discount_deferred: false,
       security_deposit_discount_rate: 0,
+      asset_type: "",
+      jurisdiction: "South Africa",
+      deposit_refundability: "",
+      deposit_interest_requirement: "",
+      deposit_interest_beneficiary: "",
+      deposit_permitted_deductions: "",
       notes: "",
     }));
   }
@@ -3533,6 +3612,91 @@ useEffect(() => {
           </small>
         </div>
 
+        <div className="field-row">
+          <label>Asset type *</label>
+          <select
+            name="asset_type"
+            value={form.asset_type || ""}
+            onChange={updateText}
+          >
+            <option value="">Select asset type...</option>
+            <option value="residential">Residential property</option>
+            <option value="commercial">Commercial property</option>
+            <option value="movable">Movable asset / equipment</option>
+          </select>
+          <small className="field-help">
+            Residential property in South Africa triggers the
+            Rental Housing Act 50 of 1999 s4B statutory
+            interest-bearing regime.
+          </small>
+        </div>
+
+        <div className="field-row">
+          <label>Jurisdiction *</label>
+          <input
+            name="jurisdiction"
+            value={form.jurisdiction || ""}
+            onChange={updateText}
+            placeholder="e.g. South Africa"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>Deposit refundability *</label>
+          <select
+            name="deposit_refundability"
+            value={form.deposit_refundability || ""}
+            onChange={updateText}
+          >
+            <option value="">Select refundability...</option>
+            <option value="refundable">Refundable</option>
+            <option value="non_refundable">Non-refundable</option>
+            <option value="partial">Partially refundable</option>
+          </select>
+        </div>
+
+        <div className="field-row">
+          <label>Interest requirement *</label>
+          <select
+            name="deposit_interest_requirement"
+            value={form.deposit_interest_requirement || ""}
+            onChange={updateText}
+          >
+            <option value="">Select interest requirement...</option>
+            <option value="statutory">Statutory (e.g. RHA s4B)</option>
+            <option value="contractual">Contractual</option>
+            <option value="none">No interest</option>
+          </select>
+        </div>
+
+        <div className="field-row">
+          <label>Interest beneficiary *</label>
+          <select
+            name="deposit_interest_beneficiary"
+            value={form.deposit_interest_beneficiary || ""}
+            onChange={updateText}
+          >
+            <option value="">Select beneficiary...</option>
+            <option value="lessee">Lessee / tenant</option>
+            <option value="lessor">Lessor</option>
+          </select>
+          <small className="field-help">
+            For South African residential deposits the
+            beneficiary must be the lessee under RHA s4B.
+          </small>
+        </div>
+
+        <div className="field-row field-span-2">
+          <label>Permitted deductions</label>
+          <textarea
+            name="deposit_permitted_deductions"
+            value={form.deposit_permitted_deductions || ""}
+            onChange={updateText}
+            rows={2}
+            placeholder="e.g. damage repairs, missing keys, outstanding rent"
+          />
+        </div>
+
         <div className="field-row field-span-2">
           <label>Additional deposit treatment</label>
 
@@ -3610,7 +3774,7 @@ useEffect(() => {
             <input
               type="number"
               name="security_deposit_discount_rate"
-              value={form.security_deposit_discount_rate ?? ""}
+              value={form.security_deposit_discount_rate || 0}
               onChange={updateNumber}
               min="0"
               step="0.0001"

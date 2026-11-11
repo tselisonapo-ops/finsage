@@ -3050,35 +3050,6 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ NULL,
             ADD COLUMN IF NOT EXISTS force_password_change BOOLEAN NOT NULL DEFAULT FALSE;
 
-        -- =========================================================
-        -- SECURITY PREFERENCES (Phase: optional OTP / session lock)
-        --
-        -- otp_enabled:
-        --   TRUE  -> sign-in requires email OTP step (default)
-        --   FALSE -> sign-in completes on password verification,
-        --            no OTP challenge is issued.
-        --   Future enforcement: even when FALSE, OTP will be
-        --   enforced when the user signs in from an unrecognised
-        --   device (device_id not in auth_trusted_devices).
-        --
-        -- session_lock_enabled:
-        --   TRUE  -> idle session is locked after the configured
-        --            timeout (default 10 minutes) and requires
-        --            re-auth (password + optional OTP) to unlock.
-        --   FALSE -> session is never auto-locked for inactivity.
-        -- =========================================================
-        ALTER TABLE public.users
-            ADD COLUMN IF NOT EXISTS otp_enabled BOOLEAN NOT NULL DEFAULT TRUE;
-
-        ALTER TABLE public.users
-            ADD COLUMN IF NOT EXISTS session_lock_enabled BOOLEAN NOT NULL DEFAULT TRUE;
-
-        ALTER TABLE public.users
-            ADD COLUMN IF NOT EXISTS idle_lock_minutes INT NOT NULL DEFAULT 10;
-
-        ALTER TABLE public.users
-            ADD COLUMN IF NOT EXISTS security_prefs_updated_at TIMESTAMPTZ NULL;
-
         ALTER TABLE public.users
             ADD COLUMN IF NOT EXISTS accepted_terms_at TIMESTAMPTZ NULL,
             ADD COLUMN IF NOT EXISTS accepted_privacy_at TIMESTAMPTZ NULL,
@@ -9277,10 +9248,7 @@ class DatabaseService:
                 password_updated_at,
                 force_password_change,
                 last_login_at,
-                last_activity_at,
-                otp_enabled,
-                session_lock_enabled,
-                idle_lock_minutes
+                last_activity_at
             FROM public.users
             WHERE LOWER(email) = LOWER(%s)
             LIMIT 1;
@@ -9354,122 +9322,6 @@ class DatabaseService:
             RETURNING id;
         """, (new_email.strip().lower(), int(user_id)))
         return bool(result)
-
-    # ============================================================
-    # SECURITY PREFERENCES (optional OTP / session lock)
-    # ============================================================
-    def get_user_security_preferences(self, user_id: int) -> Dict[str, Any]:
-        """
-        Return the user's security preference flags used by the
-        sign-in flow and idle session-lock engine.
-
-        Defaults (when columns are NULL or user not found):
-            otp_enabled            = True
-            session_lock_enabled   = True
-            idle_lock_minutes      = 10
-        """
-        row = self.fetch_one("""
-            SELECT
-                otp_enabled,
-                session_lock_enabled,
-                idle_lock_minutes,
-                security_prefs_updated_at
-            FROM public.users
-            WHERE id = %s
-            LIMIT 1;
-        """, (int(user_id),)) or {}
-
-        return {
-            "otp_enabled": bool(row.get("otp_enabled", True)),
-            "session_lock_enabled": bool(row.get("session_lock_enabled", True)),
-            "idle_lock_minutes": int(row.get("idle_lock_minutes") or 10),
-            "updated_at": row.get("security_prefs_updated_at"),
-        }
-
-    def update_user_security_preferences(
-        self,
-        user_id: int,
-        *,
-        otp_enabled: Optional[bool] = None,
-        session_lock_enabled: Optional[bool] = None,
-        idle_lock_minutes: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        """
-        Partial update of the user's security preferences. Only the
-        supplied fields are changed; the rest are preserved.
-
-        Enforces:
-          - idle_lock_minutes within [1, 240]
-          - session_lock_enabled=False implies the idle timer is disabled
-            on the client, regardless of the timeout value.
-        """
-        sets: List[str] = []
-        params: List[Any] = []
-
-        if otp_enabled is not None:
-            sets.append("otp_enabled = %s")
-            params.append(bool(otp_enabled))
-
-        if session_lock_enabled is not None:
-            sets.append("session_lock_enabled = %s")
-            params.append(bool(session_lock_enabled))
-
-        if idle_lock_minutes is not None:
-            try:
-                minutes = int(idle_lock_minutes)
-            except (TypeError, ValueError):
-                minutes = 10
-            minutes = max(1, min(240, minutes))
-            sets.append("idle_lock_minutes = %s")
-            params.append(minutes)
-
-        if not sets:
-            return self.get_user_security_preferences(user_id)
-
-        sets.append("security_prefs_updated_at = NOW()")
-        params.append(int(user_id))
-
-        self.execute_sql(
-            f"""
-            UPDATE public.users
-            SET {", ".join(sets)}
-            WHERE id = %s;
-            """,
-            tuple(params),
-        )
-
-        return self.get_user_security_preferences(user_id)
-
-    def is_user_otp_required(self, user_id: int) -> bool:
-        """
-        Convenience accessor for the sign-in flow.
-
-        NOTE:
-        This currently returns the user's saved preference verbatim.
-        When the "different device" enforcement lands, this method
-        should additionally return True whenever the requesting
-        device_id is not in public.auth_trusted_devices for this
-        user/product, regardless of otp_enabled.
-        """
-        prefs = self.get_user_security_preferences(user_id)
-        return bool(prefs.get("otp_enabled", True))
-
-    def is_user_session_lock_required(self, user_id: int) -> bool:
-        """
-        Convenience accessor for the client-side idle-lock engine.
-        Returns False when the user has explicitly disabled session
-        locking.
-        """
-        prefs = self.get_user_security_preferences(user_id)
-        return bool(prefs.get("session_lock_enabled", True))
-
-    def get_idle_lock_minutes(self, user_id: int) -> int:
-        prefs = self.get_user_security_preferences(user_id)
-        try:
-            minutes = int(prefs.get("idle_lock_minutes") or 10)
-        except (TypeError, ValueError):
-            minutes = 10
-        return max(1, minutes)
 
     def clear_reset_token(self, email: str) -> None:
         with self._conn_cursor() as (_c, cur):
@@ -9657,14 +9509,7 @@ class DatabaseService:
         sql = """
         SELECT id, email, password_hash, user_type, company_id, access_level, is_confirmed,
             password_reset_token, token_expiry, first_name, last_name, user_role,
-            is_active,
-            password_updated_at,
-            force_password_change,
-            last_login_at,
-            last_activity_at,
-            otp_enabled,
-            session_lock_enabled,
-            idle_lock_minutes
+            is_active
         FROM public.users
         WHERE id = %s
         LIMIT 1;
@@ -58738,6 +58583,21 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS security_deposit_discount_deferred BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS security_deposit_discount_rate NUMERIC(18,8);
 
+        -- ------------------------------------------------------------------
+        -- Six deposit-metadata fields consumed by the patched
+        -- preview_security_deposit_terms in lessor_lease_engine.py
+        -- to resolve the deposit's legal nature and choose a
+        -- treatment_branch (tenant_beneficial_statutory /
+        -- contractual_interest_bearing / interest_free_refundable).
+        -- ------------------------------------------------------------------
+        ALTER TABLE {schema}.lessor_leases
+        ADD COLUMN IF NOT EXISTS asset_type TEXT NULL,
+        ADD COLUMN IF NOT EXISTS jurisdiction TEXT NULL,
+        ADD COLUMN IF NOT EXISTS deposit_refundability TEXT NULL,
+        ADD COLUMN IF NOT EXISTS deposit_interest_requirement TEXT NULL,
+        ADD COLUMN IF NOT EXISTS deposit_interest_beneficiary TEXT NULL,
+        ADD COLUMN IF NOT EXISTS deposit_permitted_deductions TEXT NULL;
+
         CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_asset_active_idx
             ON {schema}.lessor_leases(company_id, asset_id)
             WHERE asset_id IS NOT NULL
@@ -80742,65 +80602,49 @@ class DatabaseService:
                         "before automatic Day 1 posting."
                     )
 
-                discount_deferred = self._bool(
-                    deposit_preview.get("discount_deferred")
-                )
-
-                discount_difference = round(
-                    deposit_amount - deposit_liability,
-                    2,
-                )
-
-                if discount_deferred and classification == "operating":
-                    if discount_difference <= 0:
-                        raise ValueError(
-                            "A positive security deposit discount difference "
-                            "is required."
-                        )
-
-                    discount_code = str(
-                        lease.get("security_deposit_discount_account_code") or ""
-                    ).strip()
-
-                    if not discount_code:
-                        raise ValueError(
-                            "Configure a deferred rental income account for "
-                            "the discounted security deposit."
-                        )
-
-                    discount_coa = self.fetch_one(
-                        f"""
-                        SELECT code
-                        FROM {self.company_schema(company_id)}.coa
-                        WHERE code = %s
-                        AND posting = TRUE
-                        LIMIT 1
-                        """,
-                        (discount_code,),
-                        cur=cur,
+                # -----------------------------------------------------
+                # Three deposit treatment branches (resolved by the
+                # patched preview_security_deposit_terms):
+                #
+                #   1. tenant_beneficial_statutory
+                #      Liability at full cash amount. Interest accrues
+                #      as a payable to the lessee (not lessor income).
+                #      No discounting. No Day-1 gain. Posts as
+                #      Bank Dr / Deposit liability Cr for the full cash.
+                #
+                #   2. contractual_interest_bearing
+                #      Liability at full cash amount. Interest accretes
+                #      as a finance cost over the lease term. No Day-1
+                #      gain. Posts as Bank Dr / Deposit liability Cr.
+                #
+                #   3. interest_free_refundable
+                #      Liability fair-valued under IFRS 9. If
+                #      requires_substance_classification is True, the
+                #      cash-vs-PV difference must be classified by an
+                #      accountant (lease consideration / financing /
+                #      deferred credit) before posting. Refuse to post.
+                # -----------------------------------------------------
+                if deposit_preview.get(
+                    "requires_substance_classification"
+                ):
+                    raise ValueError(
+                        "The refundable, interest-free security deposit "
+                        "has a present-value difference that requires "
+                        "manual substance classification (lease "
+                        "consideration, financing, or deferred credit) "
+                        "before automatic Day 1 posting. Treatment "
+                        "branch: "
+                        f"{deposit_preview.get('treatment_branch')}."
                     )
 
-                    if not discount_coa:
-                        raise ValueError(
-                            f"Deferred rental income account {discount_code} "
-                            "is not a valid posting account."
-                        )
-
-                    lines.append({
-                        "account_code": discount_code,
-                        "debit": 0.0,
-                        "credit": discount_difference,
-                        "memo": (
-                            "Deferred rental income arising from the "
-                            "discounted refundable security deposit"
-                        ),
-                    })
-
-                elif discount_deferred and classification == "finance":
+                # Legacy guard -- preserved for callers that still
+                # pass security_deposit_discount_deferred=True.
+                if deposit_preview.get("discount_deferred"):
                     raise ValueError(
-                        "Discounted security deposit accounting for finance "
-                        "leases must be incorporated into the net investment "
-                        "measurement before automatic posting."
+                        "The discounted security deposit cannot be "
+                        "automatically posted yet. The accounting treatment "
+                        "for the difference between cash received and the "
+                        "initial deposit liability must first be configured."
                     )
 
                 deposit_liability = round(float(
@@ -80972,6 +80816,13 @@ class DatabaseService:
                         "security deposit liability"
                     ),
                 })
+
+                if round(deposit_amount - deposit_liability, 2) != 0:
+                    raise ValueError(
+                        "The security deposit cash receipt and initial "
+                        "liability do not match. Additional accounting "
+                        "treatment is required before posting."
+                    )
 
             # ---------------------------------------------------------
             # FINAL JOURNAL VALIDATION
@@ -81615,6 +81466,24 @@ class DatabaseService:
             "security_deposit_discount_rate": (
                 payload.get("security_deposit_discount_rate")
             ),
+
+            # Six deposit-metadata fields consumed by the patched
+            # preview_security_deposit_terms to resolve the deposit's
+            # legal nature and choose a treatment_branch.
+            "asset_type": payload.get("asset_type"),
+            "jurisdiction": payload.get("jurisdiction"),
+            "deposit_refundability": (
+                payload.get("deposit_refundability")
+            ),
+            "deposit_interest_requirement": (
+                payload.get("deposit_interest_requirement")
+            ),
+            "deposit_interest_beneficiary": (
+                payload.get("deposit_interest_beneficiary")
+            ),
+            "deposit_permitted_deductions": (
+                payload.get("deposit_permitted_deductions")
+            ),
             "commencement_date": payload.get("commencement_date"),
             "useful_life_months": payload.get("useful_life_months"),
             "economic_life_months": (
@@ -81789,6 +81658,12 @@ class DatabaseService:
                 security_deposit_separate_account,
                 security_deposit_discount_deferred,
                 security_deposit_discount_rate,
+                asset_type,
+                jurisdiction,
+                deposit_refundability,
+                deposit_interest_requirement,
+                deposit_interest_beneficiary,
+                deposit_permitted_deductions,
                 commencement_date,
                 useful_life_months,
                 economic_life_months,
@@ -81861,6 +81736,12 @@ class DatabaseService:
                 %(security_deposit_separate_account)s,
                 %(security_deposit_discount_deferred)s,
                 %(security_deposit_discount_rate)s,
+                %(asset_type)s,
+                %(jurisdiction)s,
+                %(deposit_refundability)s,
+                %(deposit_interest_requirement)s,
+                %(deposit_interest_beneficiary)s,
+                %(deposit_permitted_deductions)s,
                 %(commencement_date)s,
                 %(useful_life_months)s,
                 %(economic_life_months)s,
@@ -84351,6 +84232,28 @@ class DatabaseService:
                 "interest_rate_implicit",
                 "discount_rate",
                 "notes",
+
+                # Six deposit-metadata fields consumed by the
+                # patched preview_security_deposit_terms. A
+                # correction can revise the deposit's legal
+                # nature without forcing a full reversal.
+                "asset_type",
+                "jurisdiction",
+                "deposit_refundability",
+                "deposit_interest_requirement",
+                "deposit_interest_beneficiary",
+                "deposit_permitted_deductions",
+
+                # Allow the deposit fields themselves to be
+                # corrected alongside the metadata.
+                "security_deposit_amount",
+                "security_deposit_arrangement",
+                "security_deposit_interest_bearing",
+                "security_deposit_received",
+                "security_deposit_separate_account",
+                "security_deposit_discount_deferred",
+                "security_deposit_discount_rate",
+                "security_deposit_account_code",
             )
 
             updates = {

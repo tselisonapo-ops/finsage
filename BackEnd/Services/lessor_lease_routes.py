@@ -611,6 +611,30 @@ def _lessor_payload(data: dict) -> dict:
         "security_deposit_account_code": (
             data.get("security_deposit_account_code") or ""
         ).strip() or None,
+
+        # -----------------------------------------------------
+        # Six deposit-metadata fields consumed by the patched
+        # preview_security_deposit_terms to resolve the deposit's
+        # legal nature and choose a treatment_branch.
+        # -----------------------------------------------------
+        "asset_type": (
+            data.get("asset_type") or ""
+        ).strip().lower() or None,
+        "jurisdiction": (
+            data.get("jurisdiction") or ""
+        ).strip() or None,
+        "deposit_refundability": (
+            data.get("deposit_refundability") or ""
+        ).strip().lower() or None,
+        "deposit_interest_requirement": (
+            data.get("deposit_interest_requirement") or ""
+        ).strip().lower() or None,
+        "deposit_interest_beneficiary": (
+            data.get("deposit_interest_beneficiary") or ""
+        ).strip().lower() or None,
+        "deposit_permitted_deductions": (
+            data.get("deposit_permitted_deductions") or ""
+        ).strip() or None,
     }
 
 def _recalculate_lessor_schedule(
@@ -1189,6 +1213,27 @@ def preview_lessor_terms(
                 "security_deposit_discount_rate",
                 minimum=0,
             ),
+
+            # Six deposit-metadata fields consumed by the
+            # patched preview_security_deposit_terms.
+            "asset_type": (
+                raw.get("asset_type") or ""
+            ).strip().lower() or None,
+            "jurisdiction": (
+                raw.get("jurisdiction") or ""
+            ).strip() or None,
+            "deposit_refundability": (
+                raw.get("deposit_refundability") or ""
+            ).strip().lower() or None,
+            "deposit_interest_requirement": (
+                raw.get("deposit_interest_requirement") or ""
+            ).strip().lower() or None,
+            "deposit_interest_beneficiary": (
+                raw.get("deposit_interest_beneficiary") or ""
+            ).strip().lower() or None,
+            "deposit_permitted_deductions": (
+                raw.get("deposit_permitted_deductions") or ""
+            ).strip() or None,
         })
 
         result = (

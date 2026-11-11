@@ -796,6 +796,14 @@ class LessorLeaseEngine:
         self,
         data: Dict[str, Any],
     ) -> Dict[str, Any]:
+        """
+        Three-branch deposit preview.
+
+        The deposit's legal nature is resolved from six
+        metadata fields. The legacy `discount_deferred` user
+        toggle is no longer authoritative; the resolved
+        `treatment_branch` drives the calculation.
+        """
         amount = self._money_decimal(
             self._decimal(
                 data.get("security_deposit_amount")
@@ -826,11 +834,40 @@ class LessorLeaseEngine:
             )
         )
 
-        discount_deferred = self._bool(
+        # Legacy user toggle -- preserved for backward
+        # compatibility but no longer authoritative.
+        legacy_discount_deferred = self._bool(
             data.get(
                 "security_deposit_discount_deferred"
             )
         )
+
+        # ------------------------------------------------------------------
+        # Six metadata fields that determine the deposit's legal nature.
+        # ------------------------------------------------------------------
+        asset_type = str(
+            data.get("asset_type") or ""
+        ).strip().lower()
+
+        jurisdiction = str(
+            data.get("jurisdiction") or ""
+        ).strip().lower()
+
+        deposit_refundability = str(
+            data.get("deposit_refundability") or ""
+        ).strip().lower()
+
+        deposit_interest_requirement = str(
+            data.get("deposit_interest_requirement") or ""
+        ).strip().lower()
+
+        deposit_interest_beneficiary = str(
+            data.get("deposit_interest_beneficiary") or ""
+        ).strip().lower()
+
+        deposit_permitted_deductions = str(
+            data.get("deposit_permitted_deductions") or ""
+        ).strip()
 
         valid_arrangements = {
             "fully_refundable",
@@ -862,46 +899,19 @@ class LessorLeaseEngine:
                 "discount_amount": 0.0,
                 "closing_liability": 0.0,
                 "schedule": [],
+                "treatment_branch": None,
+                "requires_substance_classification": False,
             }
 
-        if arrangement not in valid_arrangements:
+        if arrangement and arrangement not in valid_arrangements:
             raise ValueError(
                 "Select a valid security deposit arrangement."
             )
 
-        if (
-            discount_deferred
-            and interest_bearing
-        ):
-            raise ValueError(
-                "An interest-bearing deposit cannot be "
-                "treated as an interest-free deferred deposit."
-            )
-
-        if (
-            discount_deferred
-            and arrangement not in refundable_arrangements
-        ):
-            raise ValueError(
-                "Discounting is only available for refundable "
-                "interest-free deposits."
-            )
-
-        discount_rate = Decimal("0")
-
-        if discount_deferred:
-            discount_rate = self._annual_rate(
-                data.get(
-                    "security_deposit_discount_rate"
-                )
-            )
-
-            if discount_rate <= 0:
-                raise ValueError(
-                    "A positive annual discount rate is required "
-                    "for a deferred refundable deposit."
-                )
-
+        # ------------------------------------------------------------------
+        # Non-refundable deposit: no liability, no Day-1 entry.
+        # Requires separate IFRS 15 consideration review.
+        # ------------------------------------------------------------------
         if arrangement == "non_refundable":
             return {
                 "amount": float(amount),
@@ -916,13 +926,158 @@ class LessorLeaseEngine:
                 "closing_liability": 0.0,
                 "schedule": [],
                 "non_refundable_consideration_review_required": True,
+                "treatment_branch": "non_refundable",
+                "requires_substance_classification": True,
             }
+
+        # ------------------------------------------------------------------
+        # Resolve the treatment branch from the metadata.
+        #
+        # Rule table (jurisdiction x asset_type):
+        #   - South Africa + residential property:
+        #       Rental Housing Act 50 of 1999 s4B mandates an
+        #       interest-bearing account with interest payable
+        #       to the tenant. Branch 1 (tenant_beneficial_statutory).
+        #   - South Africa + commercial / movable: no general
+        #       statutory rule; branch follows contract.
+        #   - Other jurisdictions: branch follows contract.
+        # ------------------------------------------------------------------
+        is_sa_residential = (
+            jurisdiction in {"south africa", "za", "rsa"}
+            and asset_type == "residential"
+        )
+
+        statutory_interest_required = (
+            deposit_interest_requirement == "statutory"
+            or is_sa_residential
+        )
+
+        interest_to_lessee = (
+            deposit_interest_beneficiary == "lessee"
+            or statutory_interest_required
+        )
+
+        if statutory_interest_required and interest_to_lessee:
+            treatment_branch = "tenant_beneficial_statutory"
+        elif interest_bearing and not interest_to_lessee:
+            treatment_branch = "contractual_interest_bearing"
+        elif interest_bearing and interest_to_lessee:
+            # Contractual interest but the lessee is the
+            # beneficiary -- treat as tenant-beneficial.
+            treatment_branch = "tenant_beneficial_statutory"
+        else:
+            treatment_branch = "interest_free_refundable"
+
+        # Refundability sanity check.
+        if (
+            treatment_branch in {
+                "tenant_beneficial_statutory",
+                "interest_free_refundable",
+            }
+            and arrangement
+            and arrangement not in refundable_arrangements
+            and arrangement != "rent_offset"
+        ):
+            raise ValueError(
+                "A refundable deposit treatment requires a "
+                "refundable arrangement."
+            )
+
+        # ------------------------------------------------------------------
+        # Branch 1: tenant_beneficial_statutory
+        # ------------------------------------------------------------------
+        if treatment_branch == "tenant_beneficial_statutory":
+            # Liability at full cash amount. Interest accrues as
+            # a payable to the lessee. No discounting. No gain.
+            return {
+                "amount": float(amount),
+                "arrangement": arrangement,
+                "received": received,
+                "interest_bearing": True,
+                "separate_account": separate_account,
+                "discount_deferred": False,
+                "discount_rate": 0.0,
+                "initial_liability": float(amount),
+                "discount_amount": 0.0,
+                "closing_liability": float(amount),
+                "schedule": [],
+                "interest_rate_required": True,
+                "treatment_branch": treatment_branch,
+                "requires_substance_classification": False,
+                "interest_beneficiary": "lessee",
+                "interest_payable_to_tenant": True,
+                "statutory_basis": (
+                    "Rental Housing Act 50 of 1999 s4B"
+                    if is_sa_residential
+                    else "contractual"
+                ),
+                "permitted_deductions": deposit_permitted_deductions,
+            }
+
+        # ------------------------------------------------------------------
+        # Branch 2: contractual_interest_bearing
+        # ------------------------------------------------------------------
+        if treatment_branch == "contractual_interest_bearing":
+            # Liability measured on the contractual repayment +
+            # interest cash flows using the contractual rate.
+            # Interest accretes as a finance cost.
+            return {
+                "amount": float(amount),
+                "arrangement": arrangement,
+                "received": received,
+                "interest_bearing": True,
+                "separate_account": separate_account,
+                "discount_deferred": False,
+                "discount_rate": 0.0,
+                "initial_liability": float(amount),
+                "discount_amount": 0.0,
+                "closing_liability": float(amount),
+                "schedule": [],
+                "interest_rate_required": True,
+                "treatment_branch": treatment_branch,
+                "requires_substance_classification": False,
+                "interest_beneficiary": "lessor",
+                "interest_payable_to_tenant": False,
+                "permitted_deductions": deposit_permitted_deductions,
+            }
+
+        # ------------------------------------------------------------------
+        # Branch 3: interest_free_refundable
+        # ------------------------------------------------------------------
+        # Liability fair-valued under IFRS 9. The cash-versus-PV
+        # difference is returned as `undetermined_difference` and
+        # `requires_substance_classification=True`. The journal
+        # builder refuses to post this branch until an accountant
+        # classifies the difference (lease consideration /
+        # financing / deferred credit).
+        # ------------------------------------------------------------------
+        discount_rate = Decimal("0")
+
+        # Use the explicit deposit discount rate if supplied;
+        # otherwise fall back to the lease's implicit interest
+        # rate. If neither is supplied, the preview still runs
+        # but with a zero rate (i.e. liability = cash), which
+        # means no substance-classification issue arises.
+        explicit_rate = self._decimal(
+            data.get("security_deposit_discount_rate")
+        )
+
+        implicit_rate = self._decimal(
+            data.get("interest_rate_implicit")
+            or data.get("implicit_interest_rate")
+            or data.get("discount_rate")
+        )
+
+        if explicit_rate > 0:
+            discount_rate = self._annual_rate(explicit_rate)
+        elif implicit_rate > 0:
+            discount_rate = self._annual_rate(implicit_rate)
 
         initial_liability = amount
         discount_amount = Decimal("0")
         schedule = []
 
-        if discount_deferred:
+        if discount_rate > 0:
             frequency = str(
                 data.get("billing_frequency")
                 or "monthly"
@@ -976,16 +1131,13 @@ class LessorLeaseEngine:
                             amount - opening
                         )
                     )
-
                     closing = amount
-
                 else:
                     finance_cost = (
                         self._money_decimal(
                             opening * periodic_rate
                         )
                     )
-
                     closing = (
                         self._money_decimal(
                             opening + finance_cost
@@ -994,45 +1146,43 @@ class LessorLeaseEngine:
 
                 schedule.append({
                     "period_no": period_no,
-
-                    "opening_liability": float(
-                        opening
-                    ),
-
-                    "finance_cost": float(
-                        finance_cost
-                    ),
-
-                    "closing_liability": float(
-                        closing
-                    ),
+                    "opening_liability": float(opening),
+                    "finance_cost": float(finance_cost),
+                    "closing_liability": float(closing),
                 })
 
                 opening = closing
+
+        requires_substance_classification = (
+            discount_amount > 0
+        )
 
         return {
             "amount": float(amount),
             "arrangement": arrangement,
             "received": received,
-            "interest_bearing": interest_bearing,
+            "interest_bearing": False,
             "separate_account": separate_account,
-            "discount_deferred": discount_deferred,
+            # Legacy key -- preserved for callers that still
+            # branch on it. The authoritative flag is
+            # `requires_substance_classification`.
+            "discount_deferred": legacy_discount_deferred,
             "discount_rate": float(discount_rate),
-            "initial_liability": float(
-                initial_liability
-            ),
-            "discount_amount": float(
-                discount_amount
-            ),
-            "closing_liability": float(
-                amount
-            ),
+            "initial_liability": float(initial_liability),
+            "discount_amount": float(discount_amount),
+            "closing_liability": float(amount),
             "schedule": schedule,
-            "interest_rate_required": (
-                interest_bearing
+            "interest_rate_required": False,
+            "treatment_branch": treatment_branch,
+            "requires_substance_classification": (
+                requires_substance_classification
             ),
+            "undetermined_difference": float(discount_amount),
+            "interest_beneficiary": "lessor",
+            "interest_payable_to_tenant": False,
+            "permitted_deductions": deposit_permitted_deductions,
         }
-    
+
     def preview_operating_lease_terms(
         self,
         data: Dict[str, Any],

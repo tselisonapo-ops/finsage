@@ -1866,21 +1866,122 @@ def _coa_role_from_text(
             return "lessor_security_deposit_current"
 
     # ------------------------------------------------------------
-    # IFRS 16 LESSOR SECURITY DEPOSIT DISCOUNTING
-    # Day 1 financing benefit on interest-free refundable deposits
+    # LESSOR SECURITY DEPOSIT -- BRANCH-SPECIFIC ROLES
+    #
+    # Three roles paired with the three treatment branches
+    # resolved by preview_security_deposit_terms in
+    # lessor_lease_engine.py:
+    #
+    #   Branch 1: tenant_beneficial_statutory
+    #     -> interest_payable_to_tenant  (liability)
+    #        Interest accruing to the lessee under RHA s4B or
+    #        any other statutory/contractual tenant-beneficial
+    #        regime. Day 1 credits this account when interest
+    #        is recognised; settlement debits it together with
+    #        the deposit liability.
+    #
+    #   Branch 2: contractual_interest_bearing
+    #     -> lessor_security_deposit_finance_cost  (expense)
+    #        Effective-interest accretion of the deposit
+    #        liability over the lease term. Recognised
+    #        periodically; the Day 1 entry does NOT touch this
+    #        account.
+    #
+    #   Branch 3: interest_free_refundable
+    #     -> lessor_deferred_security_deposit_credit  (liability)
+    #        Deferred credit for the cash-vs-PV difference,
+    #        releasable to lease income over the lease term.
+    #        Used ONLY after an accountant has classified the
+    #        difference as a deferred credit. The role is
+    #        declared here so the COA can carry it explicitly;
+    #        the classifier assigns it from text only when the
+    #        account name unambiguously identifies it as such.
     # ------------------------------------------------------------
 
-    if is_income and has_any(
-        "security deposit discount gain",
-        "lease security deposit discount gain",
-        "refundable deposit discount gain",
-        "discount on refundable lease deposit",
-        "initial recognition gain on security deposit",
-        "security deposit present value gain",
-        "lease deposit financing benefit",
+    # --- Branch 1: interest payable to tenant (liability) ---
+    if is_liability and has_any(
+        "interest payable to tenant",
+        "interest payable to lessee",
+        "tenant interest payable",
+        "lessee interest payable",
+        "accrued interest payable to tenant",
+        "accrued interest payable to lessee",
+        "security deposit interest payable to tenant",
+        "security deposit interest payable to lessee",
     ):
-        return "lessor_security_deposit_discount_gain"
-    
+        return "interest_payable_to_tenant"
+
+    # --- Branch 2: deposit finance cost (expense) ---
+    if is_expense and has_any(
+        "security deposit finance cost",
+        "security deposit interest expense",
+        "deposit accretion expense",
+        "interest expense on refundable deposit",
+        "finance cost on security deposit",
+        "interest accretion on refundable deposit",
+    ):
+        return "lessor_security_deposit_finance_cost"
+
+    # --- Branch 3: deferred security deposit credit (liability) ---
+    #
+    # The classifier assigns this role ONLY when the account
+    # name unambiguously identifies it as a deferred credit for
+    # the deposit discount difference. The journal builder
+    # never auto-posts to it; the accountant must explicitly
+    # classify the difference as a deferred credit first.
+    if is_liability and has_any(
+        "deferred lease-related credit",
+        "deferred lease related credit",
+        "deferred security deposit credit",
+        "deferred deposit credit",
+        "deferred lease deposit credit",
+        "security deposit deferred credit",
+        "deferred lease consideration credit",
+    ):
+        return "lessor_deferred_security_deposit_credit"
+
+    # ------------------------------------------------------------
+    # LESSOR SECURITY DEPOSIT DISCOUNTING -- REMOVED
+    # ------------------------------------------------------------
+    #
+    # The role `lessor_security_deposit_discount_gain` must NOT be
+    # inferred from text. Whether the difference between cash
+    # received and the present value of a refundable, interest-free
+    # deposit is a Day-1 gain to the lessor depends on the legal
+    # nature of the deposit, not on the account name:
+    #
+    #   1. Tenant-beneficial statutory deposit
+    #      (e.g. South African residential deposit under the Rental
+    #      Housing Act 50 of 1999 s4B): the deposit and accrued
+    #      interest belong to the tenant. No discounting gain is
+    #      recognised; interest accrues as a payable to the tenant.
+    #
+    #   2. Contractual interest-bearing deposit: the liability is
+    #      measured on the contractual cash flows; interest
+    #      accretes as a finance cost.
+    #
+    #   3. Interest-free refundable deposit: the liability is
+    #      fair-valued under IFRS 9, and the cash-versus-PV
+    #      difference is classified by substance (lease
+    #      consideration, financing, or deferred credit). It is
+    #      NEVER auto-posted to a lessor gain.
+    #
+    # Classification of the deposit requires the following six
+    # metadata fields, captured on the lease -- not inferable from
+    # the COA row:
+    #     - asset_type           (residential | commercial | movable)
+    #     - jurisdiction         (e.g. South Africa)
+    #     - refundability        (refundable | non_refundable | partial)
+    #     - interest_requirement (statutory | contractual | none)
+    #     - interest_beneficiary (lessee | lessor)
+    #     - repayment_date_and_permitted_deductions
+    #
+    # If an accountant explicitly sets
+    # `role = 'lessor_security_deposit_discount_gain'` on a COA row
+    # (manual override), that role is preserved by `_resolve_role`
+    # -- but this classifier will never assign it automatically.
+    # ------------------------------------------------------------
+
     # IFRS 16 disposal gain account
     # Only classify this account when its COA standard is IFRS 16.
     if (

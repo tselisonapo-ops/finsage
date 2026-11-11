@@ -1,4 +1,4 @@
-print("[BOOT] api_server.py import started")
+﻿print("[BOOT] api_server.py import started")
 
 # ────────────────────────────────────────────────────────────────
 # Load environment FIRST (before ANY BackEnd.Services imports)
@@ -265,6 +265,8 @@ from BackEnd.Services.entitlement_gate import register_entitlement_gate
 from BackEnd.Services.audit_ridealong import register_audit_ridealong
 from BackEnd.Services.subscription.practice_service import register_practice
 from BackEnd.Services.billing_service import BillingService
+from BackEnd.Services.desktop.offline_sync_blueprint import offline_sync_bp
+
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
 # ────────────────────────────────────────────────────────────────
@@ -743,7 +745,7 @@ app.register_blueprint(subscriptions_bp)
 register_practice(app, db_service)              # delegation uplift + client metering
 register_entitlement_gate(app, db_service)      # stash app.extensions["entitlements"]
 register_audit_ridealong(app, db_service)
-
+app.register_blueprint(offline_sync_bp)
 # ────────────────────────────────────────────────────────────────
 # Billing service (Phase 4) — trials, commits, upgrades, dunning.
 # Needs the entitlement service (cache-bust on plan changes) and the

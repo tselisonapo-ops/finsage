@@ -14,6 +14,37 @@ export type LessorBillingTiming =
   | "arrears"
   | "advance";
 
+// ============================================================
+// Deposit-metadata enums
+//
+// These six fields drive the patched preview_security_deposit_terms
+// in lessor_lease_engine.py, which resolves the deposit's legal
+// nature into one of three treatment_branch values:
+//
+//   1. tenant_beneficial_statutory       (e.g. SA residential, RHA s4B)
+//   2. contractual_interest_bearing
+//   3. interest_free_refundable          (IFRS 9 fair-value)
+// ============================================================
+
+export type LessorAssetType =
+  | "residential"
+  | "commercial"
+  | "movable";
+
+export type LessorDepositRefundability =
+  | "refundable"
+  | "non_refundable"
+  | "partial";
+
+export type LessorDepositInterestRequirement =
+  | "statutory"
+  | "contractual"
+  | "none";
+
+export type LessorDepositInterestBeneficiary =
+  | "lessee"
+  | "lessor";
+
 export type LessorLeasePayload = {
   contract_no?: string | null;
   contract_name: string;
@@ -73,6 +104,23 @@ export type LessorLeasePayload = {
   security_deposit_separate_account: boolean;
   security_deposit_discount_deferred: boolean;
   security_deposit_received?: boolean;
+
+  // ----------------------------------------------------------
+  // Six deposit-metadata fields consumed by the patched
+  // preview_security_deposit_terms to resolve the deposit's
+  // legal nature and choose a treatment_branch.
+  // ----------------------------------------------------------
+  asset_type?: LessorAssetType | "";
+  jurisdiction?: string;
+  deposit_refundability?: LessorDepositRefundability | "";
+  deposit_interest_requirement?:
+    | LessorDepositInterestRequirement
+    | "";
+  deposit_interest_beneficiary?:
+    | LessorDepositInterestBeneficiary
+    | "";
+  deposit_permitted_deductions?: string;
+
   revenue_account_code?: string | null;
   vat_output_account_code?: string | null;
   ar_account_code?: string | null;
