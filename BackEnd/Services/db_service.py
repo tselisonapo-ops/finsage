@@ -81154,7 +81154,7 @@ class DatabaseService:
         schema = f"company_{int(company_id)}"
         where = [
             "l.company_id=%(company_id)s",
-            "l.status='active'",
+            "l.status='commenced'",
         ]
 
         params = {
