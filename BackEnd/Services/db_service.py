@@ -9248,7 +9248,10 @@ class DatabaseService:
                 password_updated_at,
                 force_password_change,
                 last_login_at,
-                last_activity_at
+                last_activity_at,
+                otp_enabled,
+                session_lock_enabled,
+                idle_lock_minutes
             FROM public.users
             WHERE LOWER(email) = LOWER(%s)
             LIMIT 1;
@@ -9323,6 +9326,95 @@ class DatabaseService:
         """, (new_email.strip().lower(), int(user_id)))
         return bool(result)
 
+    # ============================================================
+    # SECURITY PREFERENCES (optional OTP / session lock)
+    # ============================================================
+    def get_user_security_preferences(self, user_id: int) -> Dict[str, Any]:
+        """
+        Return the user's security preference flags used by the
+        sign-in flow and idle session-lock engine.
+        """
+        row = self.fetch_one("""
+            SELECT
+                otp_enabled,
+                session_lock_enabled,
+                idle_lock_minutes,
+                security_prefs_updated_at
+            FROM public.users
+            WHERE id = %s
+            LIMIT 1;
+        """, (int(user_id),)) or {}
+
+        return {
+            "otp_enabled": bool(row.get("otp_enabled", True)),
+            "session_lock_enabled": bool(row.get("session_lock_enabled", True)),
+            "idle_lock_minutes": int(row.get("idle_lock_minutes") or 10),
+            "updated_at": row.get("security_prefs_updated_at"),
+        }
+
+    def update_user_security_preferences(
+        self,
+        user_id: int,
+        *,
+        otp_enabled: Optional[bool] = None,
+        session_lock_enabled: Optional[bool] = None,
+        idle_lock_minutes: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Partial update of the user's security preferences.
+        """
+        sets: List[str] = []
+        params: List[Any] = []
+
+        if otp_enabled is not None:
+            sets.append("otp_enabled = %s")
+            params.append(bool(otp_enabled))
+
+        if session_lock_enabled is not None:
+            sets.append("session_lock_enabled = %s")
+            params.append(bool(session_lock_enabled))
+
+        if idle_lock_minutes is not None:
+            try:
+                minutes = int(idle_lock_minutes)
+            except (TypeError, ValueError):
+                minutes = 10
+            minutes = max(1, min(240, minutes))
+            sets.append("idle_lock_minutes = %s")
+            params.append(minutes)
+
+        if not sets:
+            return self.get_user_security_preferences(user_id)
+
+        sets.append("security_prefs_updated_at = NOW()")
+        params.append(int(user_id))
+
+        self.execute_sql(
+            f"""
+            UPDATE public.users
+            SET {", ".join(sets)}
+            WHERE id = %s;
+            """,
+            tuple(params),
+        )
+
+        return self.get_user_security_preferences(user_id)
+
+    def is_user_otp_required(self, user_id: int) -> bool:
+        prefs = self.get_user_security_preferences(user_id)
+        return bool(prefs.get("otp_enabled", True))
+
+    def is_user_session_lock_required(self, user_id: int) -> bool:
+        prefs = self.get_user_security_preferences(user_id)
+        return bool(prefs.get("session_lock_enabled", True))
+
+    def get_idle_lock_minutes(self, user_id: int) -> int:
+        prefs = self.get_user_security_preferences(user_id)
+        try:
+            minutes = int(prefs.get("idle_lock_minutes") or 10)
+        except (TypeError, ValueError):
+            minutes = 10
+        return max(1, minutes)
     def clear_reset_token(self, email: str) -> None:
         with self._conn_cursor() as (_c, cur):
             cur.execute("""
@@ -9509,7 +9601,14 @@ class DatabaseService:
         sql = """
         SELECT id, email, password_hash, user_type, company_id, access_level, is_confirmed,
             password_reset_token, token_expiry, first_name, last_name, user_role,
-            is_active
+            is_active,
+            password_updated_at,
+            force_password_change,
+            last_login_at,
+            last_activity_at,
+            otp_enabled,
+            session_lock_enabled,
+            idle_lock_minutes
         FROM public.users
         WHERE id = %s
         LIMIT 1;
