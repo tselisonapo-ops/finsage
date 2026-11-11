@@ -1811,6 +1811,7 @@ def _coa_role_from_text(
         ):
             return "lessor_deferred_rental"
 
+        # Non-current refundable lease security deposits received.
         if (
             has_any(
                 "refundable lease deposits - non-current",
@@ -1837,21 +1838,22 @@ def _coa_role_from_text(
                 )
             )
         ):
-            return "lessor_security_deposit_noncurrent"
+            return "ifrs16_lessor_security_deposit_noncurrent"
 
+        # Current refundable lease security deposits received.
         if has_any(
             "refundable lease deposits - current",
             "current refundable lease deposits",
+            "refundable lease security deposits - current",
+            "refundable lease security deposits current",
+            "current refundable lease security deposits",
             "lease security deposit",
             "refundable lease deposit",
             "refundable security deposits received from lessees",
             "rental security deposit",
             "tenant deposit liability",
-            "refundable lease security deposits - current",
-            "refundable lease security deposits current",
-            "current refundable lease security deposits",
         ):
-            return "lessor_security_deposit_current"
+            return "ifrs16_lessor_security_deposit_current"
 
         # Fallback when the account name does not explicitly state classification.
         if has_any(
@@ -1861,10 +1863,9 @@ def _coa_role_from_text(
             "tenant deposit liability",
         ):
             if "non-current" in cat or "non current" in cat:
-                return "lessor_security_deposit_noncurrent"
+                return "ifrs16_lessor_security_deposit_noncurrent"
 
-            return "lessor_security_deposit_current"
-
+            return "ifrs16_lessor_security_deposit_current"
     # ------------------------------------------------------------
     # LESSOR SECURITY DEPOSIT -- BRANCH-SPECIFIC ROLES
     #
@@ -2692,7 +2693,12 @@ def _coa_role_from_text(
     # ----------------------------
     # asset-class detection
     # ----------------------------
-    is_land = has_any("land")
+    land_classification_text = " ".join([
+        (name or ""),
+        (subcategory or ""),
+    ]).lower()
+
+    is_land = bool(re.search(r"\bland\b", land_classification_text))
     is_buildings = has_any("building", "buildings", "premises", "warehouse")
     is_furniture = has_any("office furniture", "furniture", "fixtures", "fixtures & fittings", "fittings")
     is_computers = has_any("computer equipment", "computer", "server", "laptop", "it hardware", "it equipment")
@@ -2742,6 +2748,35 @@ def _coa_role_from_text(
             if is_leasehold:
                 return "depreciation_expense_leasehold_improvements"
             return "depreciation_expense_ppe"
+
+    # ----------------------------
+    # Refundable deposits and financial assets
+    # Must run before PPE asset classification.
+    # Only classify deposits that represent a contractual
+    # right to receive cash, not ordinary supplier prepayments.
+    # ----------------------------
+
+    deposit_text = " ".join([
+        (name or ""),
+        (description or ""),
+        (subcategory or ""),
+    ]).lower()
+
+    is_refundable_cash_deposit = any(term in deposit_text for term in (
+        "refundable security deposit",
+        "refundable lease deposit",
+        "refundable rental deposit",
+        "security deposit paid",
+        "security deposits paid",
+        "deposit paid to landlord",
+        "deposit refundable in cash",
+        "recoverable cash deposit",
+        "cash deposit recoverable",
+    ))
+
+    if is_asset and is_refundable_cash_deposit:
+        return "ifrs9_financial_asset_amortised_cost"
+
     # ----------------------------
     # PPE asset cost side
     # ----------------------------

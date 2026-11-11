@@ -81203,12 +81203,12 @@ class DatabaseService:
 
         deposit_current = pick(
             "security_deposit_current_account_code",
-            "lessor_security_deposit_current",
+            "ifrs16_lessor_security_deposit_current",
         )
 
         deposit_noncurrent = pick(
             "security_deposit_noncurrent_account_code",
-            "lessor_security_deposit_noncurrent",
+            "ifrs16_lessor_security_deposit_noncurrent",
         )
 
         deposit_account = str(
