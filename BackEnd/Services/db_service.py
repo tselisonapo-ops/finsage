@@ -143505,12 +143505,17 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
             row = dict(cur.fetchone())
 
+
             cur.execute(
                 f"""
                 UPDATE {schema}.revenue_obligations
                 SET
-                    expected_total_cost = %s,
-                    actual_cost_to_date = %s,
+                    expected_total_cost = COALESCE(
+                        %s, expected_total_cost
+                    ),
+                    actual_cost_to_date = COALESCE(
+                        %s, actual_cost_to_date
+                    ),
                     progress_percent = %s,
                     updated_at = NOW()
                 WHERE id=%s
