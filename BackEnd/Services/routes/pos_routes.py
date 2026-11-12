@@ -411,10 +411,21 @@ def api_pos_complete_sale(cid: int, sale_id: int):
             user_id=_user_id(),
         )
         return _ok(result, 200)
+    except ValueError as ex:
+        current_app.logger.warning(
+            "api_pos_complete_sale validation failed: %s",
+            str(ex),
+        )
+        return _err(str(ex), 400, ex)
+
     except Exception as ex:
         current_app.logger.exception("api_pos_complete_sale failed")
-        return _err("Server error", 500, ex)
-
+        return _err(
+            "An unexpected error occurred while completing the POS sale.",
+            500,
+            ex,
+        )
+    
 @pos_bp.route("/api/companies/<int:cid>/pos/reports/<path:report_key>", methods=["GET", "OPTIONS"])
 @require_auth
 def api_pos_report(cid: int, report_key: str):
