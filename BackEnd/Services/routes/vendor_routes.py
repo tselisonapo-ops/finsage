@@ -1090,6 +1090,7 @@ def api_bills(company_id: int):
             "vendor_id": data.get("vendor_id"),
             "lessor_id": data.get("lessor_id"),
             "lease_id": data.get("lease_id"),
+            "lessor_lease_id": data.get("lessor_lease_id"),
             "source": data.get("source"),
             "source_id": data.get("source_id"),
 
@@ -1232,6 +1233,11 @@ def api_bills(company_id: int):
         else:
             header["lease_id"] = None
 
+        if header.get("lessor_lease_id") not in (None, "", 0, "0"):
+            header["lessor_lease_id"] = int(header["lessor_lease_id"])
+        else:
+            header["lessor_lease_id"] = None
+
         if header.get("source_id") not in (None, "", 0, "0"):
             header["source_id"] = int(header["source_id"])
         else:
@@ -1240,7 +1246,7 @@ def api_bills(company_id: int):
     except Exception:
         return jsonify({
             "ok": False,
-            "error": "vendor_id, lessor_id, lease_id and source_id must be integers when provided"
+            "error": "vendor_id, lessor_id, lease_id, lessor_lease_id and source_id must be integers when provided"
         }), 400
 
     header["source"] = (
@@ -1574,6 +1580,11 @@ def api_bill_detail(company_id: int, bill_id: int):
         else:
             header["lease_id"] = bill.get("lease_id")
 
+        if header.get("lessor_lease_id") not in (None, "", 0, "0"):
+            header["lessor_lease_id"] = int(header["lessor_lease_id"])
+        else:
+            header["lessor_lease_id"] = bill.get("lessor_lease_id")
+
         if header.get("source_id") not in (None, "", 0, "0"):
             header["source_id"] = int(header["source_id"])
         else:
@@ -1592,7 +1603,7 @@ def api_bill_detail(company_id: int, bill_id: int):
         return jsonify({
             "ok": False,
             "error": (
-                "vendor_id, lessor_id, lease_id and "
+                "vendor_id, lessor_id, lease_id, lessor_lease_id and "
                 "source_id must be integers when provided"
             ),
         }), 400

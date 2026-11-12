@@ -65205,6 +65205,9 @@ class DatabaseService:
         ALTER TABLE {schema}.bills
         ADD COLUMN IF NOT EXISTS lessor_id INT NULL;
 
+        ALTER TABLE {schema}.bills
+        ADD COLUMN IF NOT EXISTS lessor_lease_id INT NULL;
+
         DO $$
         BEGIN
         IF EXISTS (
@@ -74765,6 +74768,257 @@ class DatabaseService:
                 conn.rollback()
                 raise
 
+    def post_lessor_lease_direct_cost_paid(
+        self,
+        *,
+        company_id: int,
+        lessor_lease_id: int,
+        payment_date,
+        bank_account_id: int,
+        amount: float,
+        vat_rate: float = 0.0,
+        asset_account: str | None = None,
+        reference: str | None = None,
+        description: str | None = None,
+        user_id: int | None = None,
+    ):
+        """
+        IFRS 16 §81B/§82 — Lessor initial direct cost paid at inception.
+
+        Dr account depends on lease classification:
+          - Finance (ordinary):      net_investment_noncurrent_account_code
+                                     (IDC capitalised into net investment)
+          - Finance (manufacturer):  cost_of_sales / expense account
+                                     (IDC expensed immediately)
+          - Operating:               underlying_asset_account_code
+                                     (IDC deferred in the asset, amortised
+                                      over the lease term per §82)
+
+        Caller may override via ``asset_account``; otherwise the account is
+        resolved from the lessor lease row.
+        """
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            try:
+                # 1) Validate lessor lease + resolve classification
+                cur.execute(
+                    f"""
+                    SELECT
+                        id,
+                        lease_name,
+                        lease_classification,
+                        manufacturer_or_dealer_lessor,
+                        manufacturer_dealer,
+                        net_investment_noncurrent_account_code,
+                        net_investment_current_account_code,
+                        underlying_asset_account_code,
+                        asset_account_code,
+                        cost_of_sales_account_code
+                    FROM {schema}.lessor_leases
+                    WHERE id = %s
+                    """,
+                    (lessor_lease_id,),
+                )
+                lease = cur.fetchone()
+                if not lease:
+                    raise ValueError("Lessor lease not found")
+
+                lease_name = (
+                    lease.get("lease_name")
+                    if isinstance(lease, dict)
+                    else lease[1]
+                )
+
+                classification = str(
+                    lease.get("lease_classification") or ""
+                    if isinstance(lease, dict)
+                    else lease[2]
+                ).strip().lower()
+
+                manufacturer_dealer = self._bool(
+                    lease.get("manufacturer_or_dealer_lessor")
+                    or lease.get("manufacturer_dealer")
+                    if isinstance(lease, dict)
+                    else (
+                        lease[3] if len(lease) > 3 else None
+                    )
+                )
+
+                # 2) Resolve the Dr account per IFRS 16 classification
+                resolved_asset_account = (asset_account or "").strip()
+
+                if not resolved_asset_account:
+                    if classification == "finance":
+                        if manufacturer_dealer:
+                            resolved_asset_account = (
+                                lease.get("cost_of_sales_account_code")
+                                or ""
+                                if isinstance(lease, dict)
+                                else (lease[9] if len(lease) > 9 else "")
+                            ) or "PL_COS_5000"
+                        else:
+                            resolved_asset_account = (
+                                lease.get("net_investment_noncurrent_account_code")
+                                or ""
+                                if isinstance(lease, dict)
+                                else (lease[5] if len(lease) > 5 else "")
+                            ) or "BS_NCA_1640"
+                    elif classification == "operating":
+                        resolved_asset_account = (
+                            lease.get("underlying_asset_account_code")
+                            or lease.get("asset_account_code")
+                            or ""
+                            if isinstance(lease, dict)
+                            else (
+                                (lease[7] if len(lease) > 7 else "")
+                                or (lease[8] if len(lease) > 8 else "")
+                            )
+                        ) or "BS_NCA_1500"
+                    else:
+                        raise ValueError(
+                            "Lessor lease must be classified (finance or "
+                            "operating) before posting initial direct costs"
+                        )
+
+                if not resolved_asset_account:
+                    raise ValueError(
+                        "Unable to resolve asset account for lessor "
+                        "direct cost posting"
+                    )
+
+                # 3) Validate bank account + linked ledger account
+                cur.execute(
+                    f"""
+                    SELECT id, bank_name, account_name, ledger_account_code
+                    FROM {schema}.company_bank_accounts
+                    WHERE id = %s
+                    """,
+                    (bank_account_id,),
+                )
+                bank = cur.fetchone()
+                if not bank:
+                    raise ValueError("Bank account not found")
+
+                bank_gl = (
+                    bank.get("ledger_account_code")
+                    if isinstance(bank, dict)
+                    else bank[3]
+                )
+                if not bank_gl:
+                    raise ValueError(
+                        "Selected bank account is not linked to a ledger account"
+                    )
+
+                gross = Decimal(str(amount or 0)).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                if gross <= 0:
+                    raise ValueError("Amount must be greater than zero")
+
+                rate = Decimal(str(vat_rate or 0))
+                if rate > 1:
+                    rate = rate / Decimal("100")
+
+                if rate > 0:
+                    net = (gross / (Decimal("1.0") + rate)).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                    vat = (gross - net).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                else:
+                    net = gross
+                    vat = Decimal("0.00")
+
+                je_desc = description or (
+                    f"Lessor initial direct cost paid - {lease_name}"
+                )
+                je_ref = (
+                    reference or ""
+                ).strip() or f"LESSOR-DC-{lessor_lease_id}"
+
+                lines = [
+                    {
+                        "account_code": resolved_asset_account,
+                        "debit": float(net),
+                        "credit": 0.0,
+                        "memo": f"{je_desc} - {classification} lessor IDC",
+                    }
+                ]
+
+                if vat > 0:
+                    lines.append({
+                        "account_code": "BS_CA_1410",
+                        "debit": float(vat),
+                        "credit": 0.0,
+                        "memo": f"{je_desc} - VAT input",
+                    })
+
+                lines.append({
+                    "account_code": bank_gl,
+                    "debit": 0.0,
+                    "credit": float(gross),
+                    "memo": f"{je_desc} - paid from bank",
+                })
+
+                entry = {
+                    "date": (
+                        payment_date.isoformat()
+                        if hasattr(payment_date, "isoformat")
+                        else str(payment_date)
+                    ),
+                    "ref": je_ref,
+                    "description": je_desc,
+                    "source": "lessor_lease_direct_cost_paid",
+                    "source_id": int(lessor_lease_id),
+                    "created_by_user_id": user_id,
+                    "updated_by_user_id": user_id,
+                    "gross_amount": float(gross),
+                    "currency": "USD",
+                    "lines": lines,
+                }
+
+                journal_id = self.post_journal_with_overdraft(company_id, entry)
+
+                # Write capture status back onto the lessor lease row
+                try:
+                    cur.execute(
+                        f"""
+                        UPDATE {schema}.lessor_leases
+                        SET
+                            direct_cost_capture_status = %s,
+                            direct_cost_capture_journal_id = %s,
+                            direct_cost_capture_bank_account_id = %s,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        ("paid", journal_id, bank_account_id, lessor_lease_id),
+                    )
+                except Exception:
+                    # columns may not exist yet on older schemas
+                    pass
+
+                conn.commit()
+
+                return {
+                    "lessor_lease_id": int(lessor_lease_id),
+                    "journal_id": int(journal_id),
+                    "bank_account_id": int(bank_account_id),
+                    "bank_gl_account_code": bank_gl,
+                    "asset_account_code": resolved_asset_account,
+                    "classification": classification,
+                    "manufacturer_dealer": bool(manufacturer_dealer),
+                    "gross_amount": float(gross),
+                    "net_amount": float(net),
+                    "vat_amount": float(vat),
+                    "status": "paid",
+                }
+
+            except Exception:
+                conn.rollback()
+                raise
+
     def list_lease_schedule_for_month(self, company_id: int, as_of: date = None, cur=None):
         schema = f"company_{int(company_id)}"
 
@@ -80644,10 +80898,43 @@ class DatabaseService:
                         "underlying_asset_account_code is required"
                     )
 
-                gain_loss = round(
-                    net_investment - carrying_amount,
+                # -----------------------------------------------------
+                # IFRS 16 §81B — Lessor initial direct costs (IDC)
+                #
+                # For an ordinary finance lessor, IDC is capitalised
+                # into the net investment (net_investment = FV + IDC).
+                # It must NOT inflate the disposal gain/loss.
+                #
+                # For a manufacturer/dealer lessor, the engine already
+                # excludes IDC from net_investment (net_investment = FV),
+                # so net_investment is safe to use directly.
+                #
+                # Genuine gain/loss = fair_value − carrying_amount.
+                # -----------------------------------------------------
+                fair_value = round(
+                    float(
+                        lease.get("fair_value")
+                        or lease.get("fair_value_of_underlying_asset")
+                        or 0
+                    ),
                     2,
                 )
+
+                manufacturer_dealer = self._bool(
+                    lease.get("manufacturer_or_dealer_lessor")
+                    or lease.get("manufacturer_dealer")
+                )
+
+                if manufacturer_dealer:
+                    gain_loss = round(
+                        net_investment - carrying_amount,
+                        2,
+                    )
+                else:
+                    gain_loss = round(
+                        fair_value - carrying_amount,
+                        2,
+                    )
 
                 if gain_loss > 0 and not gain_code:
                     raise ValueError(
@@ -112719,6 +113006,12 @@ class DatabaseService:
             else None
         )
 
+        lessor_lease_id = (
+            int(header["lessor_lease_id"])
+            if header.get("lessor_lease_id") not in (None, "", 0, "0")
+            else None
+        )
+
         source = (
             str(header.get("source") or "").strip()
             or None
@@ -112858,6 +113151,7 @@ class DatabaseService:
                 SET vendor_id=%s,
                     lessor_id=%s,
                     lease_id=%s,
+                    lessor_lease_id=%s,
                     source=%s,
                     source_id=%s,
                     number=%s,
@@ -112881,6 +113175,7 @@ class DatabaseService:
                     int(header["vendor_id"]),
                     lessor_id,
                     lease_id,
+                    lessor_lease_id,
                     source,
                     source_id,
                     header.get("number"),
@@ -112933,6 +113228,7 @@ class DatabaseService:
                     vendor_id,
                     lessor_id,
                     lease_id,
+                    lessor_lease_id,
                     source,
                     source_id,
                     number,
@@ -112954,7 +113250,8 @@ class DatabaseService:
                     %s,%s,%s,%s,%s,
                     %s,%s,%s,%s,%s,
                     %s,%s,%s,%s,%s,
-                    %s,%s,%s,%s,%s
+                    %s,%s,%s,%s,%s,
+                    %s
                 )
                 RETURNING id;
                 """,
@@ -112963,6 +113260,7 @@ class DatabaseService:
                     int(header["vendor_id"]),
                     lessor_id,
                     lease_id,
+                    lessor_lease_id,
                     source,
                     source_id,
                     header.get("number"),
@@ -113086,6 +113384,12 @@ class DatabaseService:
         lease_id = (
             int(header["lease_id"])
             if header.get("lease_id") not in (None, "", 0, "0")
+            else None
+        )
+
+        lessor_lease_id = (
+            int(header["lessor_lease_id"])
+            if header.get("lessor_lease_id") not in (None, "", 0, "0")
             else None
         )
 
@@ -113293,6 +113597,7 @@ class DatabaseService:
                 SET vendor_id=%s,
                     lessor_id=%s,
                     lease_id=%s,
+                    lessor_lease_id=%s,
                     source=%s,
                     source_id=%s,
                     number=%s,
@@ -113317,6 +113622,7 @@ class DatabaseService:
                     int(header["vendor_id"]),
                     lessor_id,
                     lease_id,
+                    lessor_lease_id,
                     source,
                     source_id,
                     header.get("number"),
@@ -114149,6 +114455,7 @@ class DatabaseService:
             "asset_acquisition_id",
             "lessor_id",
             "lease_id",
+            "lessor_lease_id",
             "source",
             "source_id",
             "reversed_journal_id",

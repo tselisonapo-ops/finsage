@@ -44404,6 +44404,37 @@ window.postTerm = async function postTerm() {
         window.openBillFromLeaseDirectCost?.(data.payload || {});
       }, 150);
     }
+
+    // -----------------------------------------------------------------
+    // Lessor IDC (initial direct costs) — AP bill prefill bridge.
+    // Mirrors the lessee branch above, but uses a separate localStorage
+    // key and a separate applyLessorLeaseApPrefill() helper because:
+    //   1. The vendor is NOT auto-resolved from lessor_id (the IDC is
+    //      typically paid to a third-party broker/lawyer/valuer, so the
+    //      user must pick a vendor explicitly in the AP form).
+    //   2. The Dr account depends on lease classification:
+    //        finance (ordinary)      -> net investment (non-current)
+    //        finance (manufacturer)  -> cost of sales (expensed)
+    //        operating               -> underlying asset (deferred)
+    // -----------------------------------------------------------------
+    if (data.type === "lessor_lease_create_ap_bill") {
+      closeDrawer();
+
+      localStorage.setItem(
+        "fs_lessor_lease_ap_bill_prefill",
+        JSON.stringify(data.payload || {})
+      );
+
+      if (typeof window.switchScreen === "function") {
+        await window.switchScreen("ap");
+      } else {
+        location.hash = "screen-ap";
+      }
+
+      setTimeout(() => {
+        window.applyLessorLeaseApPrefill?.(data.payload || {});
+      }, 150);
+    }
   });
 })();
 
@@ -145988,6 +146019,20 @@ function bindAP() {
       })(),
 
       posting_mode: (root.querySelector("#billPostingMode")?.value || "").trim() || null,
+
+      // --- Lease linkage (source of truth = prefill windows) ---
+      // Set by applyLeaseApPrefill (lessee) / applyLessorLeaseApPrefill (lessor).
+      // The bill form has no dedicated hidden inputs for these, so we read
+      // them from the prefill windows here so saveBillDraft() can include
+      // them in the POST/PUT body and they reach the bills table.
+      lease_id: (() => {
+        const v = Number(window._CURRENT_LEASE_BILL_PREFILL?.lease_id || 0);
+        return v > 0 ? v : null;
+      })(),
+      lessor_lease_id: (() => {
+        const v = Number(window._CURRENT_LESSOR_LEASE_BILL_PREFILL?.lessor_lease_id || 0);
+        return v > 0 ? v : null;
+      })(),
       currency: (root.querySelector("#billCurrency")?.value || "").trim() || null,
       vat_enabled: !!root.querySelector("#apBillVatEnabled")?.checked,
       vat_mode: (root.querySelector("#apBillVatMode")?.value || "exclusive").toLowerCase(),      discount_rate: parseDiscountRate(root.querySelector("#billDisc")?.value),
@@ -146471,6 +146516,243 @@ function bindAP() {
 
   window.applyLeaseApPrefill = applyLeaseApPrefill;
 
+  // =================================================================
+  // LESSOR LEASE IDC — AP BILL PREFILL
+  // =================================================================
+  // Mirrors applyLeaseApPrefill() but for lessor-lease-sourced initial
+  // direct costs. Key differences from the lessee path:
+  //
+  //   1. NO vendor auto-resolution from lessor_id. The IDC is typically
+  //      paid to a third-party broker/lawyer/valuer, so the user must
+  //      pick a vendor explicitly in the AP form. If prefill.vendor_id
+  //      is missing, we leave the vendor field blank and show a hint.
+  //
+  //   2. The Dr account (prefill.asset_account) depends on lease
+  //      classification, resolved in the wizard before postMessage:
+  //        finance (ordinary)      -> net investment (non-current)
+  //        finance (manufacturer)  -> cost of sales (expensed)
+  //        operating               -> underlying asset (deferred)
+  //
+  //   3. Stamps window._CURRENT_LESSOR_LEASE_BILL_PREFILL so the bill
+  //      post handler can set header.source = "lessor_lease",
+  //      header.source_id = lease_id, header.lease_id = lease_id,
+  //      header.lessor_id = lessor_id on the saved bill row.
+  // =================================================================
+  async function applyLessorLeaseApPrefill(prefill) {
+    if (!prefill) return false;
+
+    const amount = Number(prefill.amount || 0);
+    const vatRate = Number(prefill.vat_rate || 0);
+    const lessorId = Number(prefill.lessor_id || 0);
+
+    // The lessor lease ID. Wizard payload sends it as `lessor_lease_id`
+    // (preferred) but older wizards sent it as `lease_id` — accept both.
+    // CRITICAL: this is the LESSOR lease ID, NOT the lessee lease ID.
+    // Storing it under "lease_id" below would cross-contaminate the
+    // bills.lease_id column (which is reserved for the lessee lease).
+    const lessorLeaseId = Number(
+      prefill.lessor_lease_id || prefill.lease_id || 0
+    );
+    const leaseId = lessorLeaseId; // keep local var name for log lines below
+
+    const cid = window.getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+    const root = typeof getBillRoot === "function" ? getBillRoot() : document;
+
+    window.clearBillForm?.({ keepCurrency: true });
+
+    // Stamp the prefill context so the bill-post handler can tag the
+    // saved bill row with source = "lessor_lease" and the lessor lease /
+    // lessor master IDs for traceability back to the lessor lease.
+    //
+    // NOTE: we store under "lessor_lease_id" only — never under "lease_id",
+    // because bills.lease_id refers to the LESSEE lease (different table).
+    // readBillForm() picks this up and saveBillDraft() forwards it to the
+    // backend, where vendor_routes.py persists it on the bills row.
+    window._CURRENT_LESSOR_LEASE_BILL_PREFILL = {
+      source: "lessor_lease",
+      source_id: lessorLeaseId || null,
+      lessor_lease_id: lessorLeaseId || null,
+      lessor_id: lessorId || null,
+      vendor_id: Number(prefill.vendor_id || 0) || null,
+      classification: prefill.classification || null,
+      manufacturer_dealer: !!prefill.manufacturer_dealer,
+    };
+
+    // --- Vendor resolution ---
+    // Unlike the lessee path, we do NOT auto-resolve a vendor from the
+    // lessor. The IDC is typically paid to a third-party broker/lawyer/
+    // valuer, so the user must pick one in the AP form.
+    let vendorId = Number(prefill.vendor_id || 0);
+    let vendorName = String(prefill.vendor_name || "").trim();
+
+    // If the wizard passed a vendor_id, resolve its name from the cache.
+    if (vendorId > 0) {
+      let vendors = Array.isArray(window.VENDORS_CACHE)
+        ? window.VENDORS_CACHE
+        : [];
+
+      if (!vendors.length) {
+        try {
+          const res = await apiFetch(
+            `/api/companies/${cid}/vendors?include_inactive=1`,
+            { method: "GET" }
+          );
+
+          vendors = Array.isArray(res)
+            ? res
+            : (res?.data || res?.rows || res?.vendors || []);
+
+          window.VENDORS_CACHE = vendors;
+        } catch (err) {
+          console.warn("[LESSOR AP] vendor lookup failed:", err);
+        }
+      }
+
+      const hit = vendors.find((v) => Number(v.id) === vendorId);
+
+      if (hit) {
+        vendorName = String(
+          hit.name || hit.vendor_name || vendorName || ""
+        ).trim();
+      }
+    } else {
+      console.warn(
+        "[LESSOR AP] no vendor_id in prefill — user must pick a vendor",
+        prefill
+      );
+    }
+
+    console.log("[LESSOR AP] vendor resolution:", {
+      lessor_id: lessorId || null,
+      vendor_id: vendorId || null,
+      vendor_name: vendorName || null,
+    });
+
+    // --- Write bill header fields ---
+    const today = new Date().toISOString().slice(0, 10);
+
+    window.writeBillForm?.({
+      vendor_id: vendorId || null,
+      vendorName,
+      bill_date: today,
+      currency: window.CURRENT_COMPANY?.currency || "USD",
+      number: prefill.reference || "",
+      notes:
+        "Lessor direct cost capture" +
+        (prefill.reference ? ` | Ref: ${prefill.reference}` : ""),
+    });
+
+    const vendorIdEl = root.querySelector("#billVendorId");
+    const vendorEl = root.querySelector("#billVendor");
+
+    if (vendorIdEl) {
+      vendorIdEl.value = vendorId > 0 ? String(vendorId) : "";
+    }
+
+    if (vendorEl) {
+      if (vendorName) {
+        vendorEl.value =
+          vendorEl.tagName === "SELECT"
+            ? String(vendorId || "")
+            : vendorName;
+      } else {
+        // No vendor resolved — focus the field so the user picks one.
+        vendorEl.value = "";
+        setTimeout(() => vendorEl.focus?.(), 200);
+      }
+    }
+
+    const memoEl = root.querySelector("#billMemo");
+    if (memoEl) {
+      memoEl.value =
+        prefill.description ||
+        `Lessor initial direct cost - Lease ${leaseId || ""}`;
+    }
+
+    // --- VAT setup ---
+    const vatEnabledEl = root.querySelector("#apBillVatEnabled");
+    const vatModeEl = root.querySelector("#apBillVatMode");
+
+    if (vatEnabledEl) vatEnabledEl.checked = vatRate > 0;
+    if (vatModeEl) vatModeEl.value = "exclusive";
+
+    // --- Ensure account dropdowns are loaded ---
+    if (
+      !Array.isArray(window.BILL_ACCOUNTS_CACHE) ||
+      !window.BILL_ACCOUNTS_CACHE.length
+    ) {
+      await window.loadBillAccountsForLines?.();
+    }
+
+    window.refreshBillAccountDropdowns?.();
+
+    // --- Add the IDC bill line ---
+    const linesBody = root.querySelector("#billLines");
+    if (linesBody) linesBody.innerHTML = "";
+
+    const account = String(
+      prefill.asset_account || "BS_NCA_1640"
+    ).trim();
+
+    const row = window.addBillLine?.({
+      item_name: "Lessor Direct Cost",
+      description:
+        prefill.description ||
+        `Lessor initial direct cost - Lease ${leaseId || ""}`,
+      quantity: 1,
+      unit_price: amount,
+      account_code: account,
+      vat_code:
+        vatRate > 0
+          ? (vatRate === 15 ? "STANDARD" : "CUSTOM")
+          : "ZERO",
+      vat_rate: vatRate,
+    });
+
+    const acctSel = row?.querySelector?.(".bill-acct");
+
+    if (acctSel && account) {
+      const exists = Array.from(acctSel.options || [])
+        .some((opt) => String(opt.value).trim() === account);
+
+      if (exists) {
+        acctSel.value = account;
+      } else {
+        console.warn("[LESSOR AP] Account not found:", account);
+      }
+    }
+
+    if (vendorEl) {
+      ["input", "change", "blur"].forEach((type) => {
+        vendorEl.dispatchEvent(
+          new Event(type, { bubbles: true })
+        );
+      });
+    }
+
+    window._CURRENT_LESSOR_LEASE_BILL_PREFILL.vendor_id =
+      vendorId || null;
+
+    window.recalcBill?.({ force: true });
+    window.saveBillDraftToLocal?.();
+
+    console.log("[LESSOR AP] prefill applied", {
+      lease_id: leaseId || null,
+      lessor_id: lessorId || null,
+      vendor_id: vendorId || null,
+      vendor_name: vendorName || null,
+      account_code: account,
+      amount,
+      vat_rate: vatRate,
+      classification: prefill.classification || null,
+      manufacturer_dealer: !!prefill.manufacturer_dealer,
+    });
+
+    return true;
+  }
+
+  window.applyLessorLeaseApPrefill = applyLessorLeaseApPrefill;
+
   function findMatchingAssetGrniForBill(form) {
     const vendorId = Number(form.vendor_id || 0);
     if (!vendorId) return null;
@@ -146627,6 +146909,12 @@ function bindAP() {
     asset_id: form.asset_id || null,
     asset_acquisition_id: form.asset_acquisition_id || null,
     posting_mode: form.posting_mode || null,
+
+    // --- Lease linkage (passed through from readBillForm) ---
+    // Lessee IDC bills carry lease_id; lessor IDC bills carry lessor_lease_id.
+    // vendor_routes.py persists both on the bills table.
+    lease_id: form.lease_id || null,
+    lessor_lease_id: form.lessor_lease_id || null,
   };
 
     const billId = parseInt(root.querySelector("#billId")?.value || "0", 10) || 0;
@@ -146700,6 +146988,13 @@ function bindAP() {
     setVal("billAssetAcquisitionId", "");
     setVal("billPostingMode", "");
     window._CURRENT_ASSET_BILL_PREFILL = null;
+
+    // ✅ Clear lease linkage prefill windows so a fresh bill doesn't
+    // inherit the previous lessee/lessor IDC lease context. Without this,
+    // a normal AP bill created right after a lease IDC bill would silently
+    // carry the previous lease_id / lessor_lease_id to the backend.
+    window._CURRENT_LEASE_BILL_PREFILL = null;
+    window._CURRENT_LESSOR_LEASE_BILL_PREFILL = null;
     const vatNote = root.querySelector("#assetGrniVatNote") || document.getElementById("assetGrniVatNote");
     if (vatNote) vatNote.remove();
     const today = new Date().toISOString().slice(0, 10);
@@ -146881,6 +147176,33 @@ function bindAP() {
     }
   } catch (e) {
     console.warn("[AP] failed to apply lease AP prefill", e);
+  }
+
+  // ✅ Apply LESSOR lease direct cost prefill after AP screen has mounted
+  // Mirrors the lessee block above, but for lessor-lease-sourced IDC bills.
+  // The vendor is NOT auto-resolved (the IDC is typically paid to a third-
+  // party broker/lawyer/valuer, so the user must pick one in the form).
+  try {
+    const raw = localStorage.getItem("fs_lessor_lease_ap_bill_prefill");
+
+    if (raw) {
+      const prefill = JSON.parse(raw);
+
+      console.log("[AP] found lessor lease AP prefill", prefill);
+
+      localStorage.removeItem("fs_lessor_lease_ap_bill_prefill");
+
+      setTimeout(() => {
+        if (typeof window.applyLessorLeaseApPrefill === "function") {
+          console.log("[AP] applying lessor lease AP prefill");
+          window.applyLessorLeaseApPrefill(prefill);
+        } else {
+          console.warn("[AP] applyLessorLeaseApPrefill missing");
+        }
+      }, 150);
+    }
+  } catch (e) {
+    console.warn("[AP] failed to apply lessor lease AP prefill", e);
   }
 
   // ======================================================

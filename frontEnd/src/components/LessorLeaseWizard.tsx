@@ -229,6 +229,17 @@ const LessorLeaseWizard: React.FC<Props> = ({
   const [createdLeaseId, setCreatedLeaseId] =
     useState<number | null>(null);
 
+  // --- Lessor IDC (initial direct costs) capture modal ---
+  // Shown after lease creation when initial_direct_costs > 0.
+  // Mirrors the lessee wizard's showDirectCostPrompt but with 4
+  // options (lessee has 3) because the lessor may have already
+  // recorded the IDC inside the asset carrying amount or expensed
+  // it (manufacturer/dealer).
+  const [showDirectCostModal, setShowDirectCostModal] =
+    useState<boolean>(false);
+  const [directCostLeaseId, setDirectCostLeaseId] =
+    useState<number | null>(null);
+
   type ScheduleResult = {
     created_or_updated?: number;
     items?: unknown[];
@@ -1435,6 +1446,17 @@ useEffect(() => {
         created_or_updated: Number(response.accounting_schedule_count || 0),
         items: response.accounting_schedule || [],
       });
+
+      // --- IFRS 16 Lessor IDC capture prompt ---
+      // If initial_direct_costs > 0, show the 4-option modal so the
+      // user can choose how to handle the IDC (AP bill / paid /
+      // previously recorded / skip). The lease itself is already
+      // created and commenced at this point.
+      const idcAmount = Number(form.initial_direct_costs || 0);
+      if (idcAmount > 0) {
+        setDirectCostLeaseId(leaseId);
+        setShowDirectCostModal(true);
+      }
 
       console.log("[LESSOR] lease commenced", {
         leaseId,
@@ -4080,6 +4102,206 @@ useEffect(() => {
       {step === 1 && renderStep1()}
       {step === 2 && renderStep2()}
       {step === 3 && renderStep3()}
+
+      {/* --- IFRS 16 Lessor IDC capture modal --- */}
+      {/* Mirrors the lessee wizard's direct-cost prompt but with */}
+      {/* 4 options because the lessor may have already recorded */}
+      {/* the IDC (in the asset carrying amount or expensed for */}
+      {/* manufacturer/dealer). */}
+      {showDirectCostModal && directCostLeaseId && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 12,
+              padding: 24,
+              maxWidth: 520,
+              width: "90vw",
+              boxShadow: "0 18px 50px rgba(0,0,0,0.25)",
+            }}
+          >
+            <h3 style={{ margin: "0 0 8px", fontSize: 18 }}>
+              Initial direct costs
+            </h3>
+            <p style={{ margin: "0 0 16px", color: "#6b7280", fontSize: 14 }}>
+              This lease has initial direct costs of
+              <strong>{Number(form.initial_direct_costs || 0).toFixed(2)}</strong>.
+              How would you like to handle them?
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {/* Option 1: Create AP Bill (postMessage to parent dashboard) */}
+              <button
+                type="button"
+                onClick={() => {
+                  const classification = (
+                    form.classification_override || ""
+                  ).toLowerCase() || "operating";
+                  const isManufacturerDealer = !!(form.manufacturer_dealer_lessor);
+
+                  // Dr account per IFRS 16 classification:
+                  //   Finance (ordinary):      net investment non-current
+                  //   Finance (manufacturer):  cost of sales (expensed)
+                  //   Operating:               underlying asset (deferred)
+                  const assetAccount =
+                    classification === "finance"
+                      ? (isManufacturerDealer
+                          ? (form.cost_of_sales_account_code || "PL_COS_5000")
+                          : (form.net_investment_noncurrent_account_code || "BS_NCA_1640"))
+                      : (form.underlying_asset_account_code || "BS_NCA_1500");
+
+                  window.parent?.postMessage({
+                    type: "lessor_lease_create_ap_bill",
+                    payload: {
+                      source: "lessor_lease",
+                      lease_id: directCostLeaseId,
+                      lessor_id: form.lessor_id || null,
+                      vendor_id: null, // user picks the broker/lawyer vendor in AP
+                      amount: Number(form.initial_direct_costs || 0),
+                      vat_rate: Number(form.vat_rate || 0),
+                      asset_account: assetAccount,
+                      description: `Lessor initial direct cost - $`
+                        + (form.lease_name || `Lease ${directCostLeaseId}`),
+                      reference: `LESSOR-DC-${directCostLeaseId}`,
+                      company_id: companyId,
+                      classification,
+                      manufacturer_dealer: isManufacturerDealer,
+                    },
+                  }, "*");
+                  setShowDirectCostModal(false);
+                }}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  fontWeight: 600,
+                  fontSize: 14,
+                }}
+              >
+                Create AP Bill
+                <span style={{ display: "block", fontWeight: 400, color: "#6b7280", fontSize: 12 }}>
+                  IDC paid to a third-party (broker/lawyer/valuer) - not yet recorded. Opens the AP bill form.
+                </span>
+              </button>
+
+              {/* Option 2: Record as Paid (POST to backend) */}
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const bankAccountId = Number(
+                      window.prompt("Enter the bank account ID used to pay the IDC:") || 0
+                    );
+                    if (!bankAccountId) return;
+                    const paymentDate = new Date().toISOString().slice(0, 10);
+
+                    const res = await apiFetch(
+                      `/api/companies/${companyId}/lessor-leases/${directCostLeaseId}/direct-costs/paid`,
+                      {
+                        method: "POST",
+                        body: JSON.stringify({
+                          bank_account_id: bankAccountId,
+                          payment_date: paymentDate,
+                          amount: Number(form.initial_direct_costs || 0),
+                          vat_rate: Number(form.vat_rate || 0),
+                          reference: `LESSOR-DC-${directCostLeaseId}`,
+                          description: `Lessor initial direct cost - $`
+                            + (form.lease_name || `Lease ${directCostLeaseId}`),
+                        }),
+                      }
+                    );
+                    if (res?.ok) {
+                      alert("Initial direct cost recorded as paid.");
+                    } else {
+                      alert(res?.error || "Failed to record direct cost.");
+                    }
+                  } catch (err) {
+                    alert(err instanceof Error ? err.message : "Failed");
+                  } finally {
+                    setShowDirectCostModal(false);
+                  }
+                }}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  fontWeight: 600,
+                  fontSize: 14,
+                }}
+              >
+                Record as Paid
+                <span style={{ display: "block", fontWeight: 400, color: "#6b7280", fontSize: 12 }}>
+                  IDC paid at inception via cash/bank - posts Dr IDC / Dr VAT / Cr Bank immediately.
+                </span>
+              </button>
+
+              {/* Option 3: Previously Recorded */}
+              <button
+                type="button"
+                onClick={() => {
+                  // IDC already sits in the asset carrying amount
+                  // (ordinary) or was expensed (manufacturer/dealer).
+                  // No journal needed - just close.
+                  setShowDirectCostModal(false);
+                }}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  fontWeight: 600,
+                  fontSize: 14,
+                }}
+              >
+                Previously Recorded
+                <span style={{ display: "block", fontWeight: 400, color: "#6b7280", fontSize: 12 }}>
+                  IDC already inside the asset carrying amount or expensed - no journal needed.
+                </span>
+              </button>
+
+              {/* Option 4: Skip for now */}
+              <button
+                type="button"
+                onClick={() => setShowDirectCostModal(false)}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  fontWeight: 600,
+                  fontSize: 14,
+                  color: "#6b7280",
+                }}
+              >
+                Skip for now
+                <span style={{ display: "block", fontWeight: 400, color: "#9ca3af", fontSize: 12 }}>
+                  Decide later - IDC remains unposted (you can capture it from the lease workspace).
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

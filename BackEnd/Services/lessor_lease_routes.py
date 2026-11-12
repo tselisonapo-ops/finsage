@@ -2808,3 +2808,77 @@ def lessor_amortisation_schedule(company_id: int, lease_id: int):
     except Exception as e:
         current_app.logger.exception("lessor_amortisation_schedule failed")
         return _json_error(str(e),500)
+
+
+# =====================================================================
+# LESSOR INITIAL DIRECT COSTS - PAID AT INCEPTION
+# =====================================================================
+# IFRS 16 section 81B / 82
+#
+# When the lessor pays initial direct costs (broker fees, legal fees,
+# valuation fees) at lease inception via cash/bank, this endpoint posts
+# the journal immediately. The Dr account is resolved from the lease
+# classification:
+#
+#   Finance (ordinary):      Dr Net investment (non-current)   - IDC capitalised
+#   Finance (manufacturer):  Dr Cost of sales                  - IDC expensed
+#   Operating:               Dr Underlying asset                - IDC deferred
+#
+# For the unpaid (AP bill) path, the React wizard issues a
+# `lessor_lease_create_ap_bill` postMessage to the parent dashboard,
+# which prefills the AP bill form (see dashboard.js
+# applyLessorLeaseApPrefill).
+# =====================================================================
+@lessor_bp.route(
+    "/api/companies/<int:company_id>/lessor-leases/<int:lease_id>/direct-costs/paid",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def lessor_lease_direct_cost_paid(company_id: int, lease_id: int):
+    if request.method=="OPTIONS": return _opt()
+
+    user_id,deny=_auth(company_id)
+    if deny: return deny
+
+    try:
+        raw = request.get_json(silent=True) or {}
+
+        bank_account_id = int(raw.get("bank_account_id") or 0)
+        if not bank_account_id:
+            return _json_error("bank_account_id is required",400)
+
+        amount = float(raw.get("amount") or 0)
+        if amount <= 0:
+            return _json_error("amount must be greater than zero",400)
+
+        payment_date = _date(
+            raw.get("payment_date"),
+            "payment_date",
+            required=True,
+        )
+
+        vat_rate = float(raw.get("vat_rate") or 0)
+        asset_account = (raw.get("asset_account") or "").strip() or None
+        reference = (raw.get("reference") or "").strip() or None
+        description = (raw.get("description") or "").strip() or None
+
+        result = db_service.post_lessor_lease_direct_cost_paid(
+            company_id=company_id,
+            lessor_lease_id=lease_id,
+            payment_date=payment_date,
+            bank_account_id=bank_account_id,
+            amount=amount,
+            vat_rate=vat_rate,
+            asset_account=asset_account,
+            reference=reference,
+            description=description,
+            user_id=user_id,
+        )
+
+        return jsonify({"ok":True, **result})
+
+    except ValueError as e:
+        return _json_error(str(e),400)
+    except Exception as e:
+        current_app.logger.exception("lessor_lease_direct_cost_paid failed")
+        return _json_error(str(e),500)
