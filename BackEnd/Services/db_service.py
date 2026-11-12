@@ -2453,6 +2453,47 @@ class DatabaseService:
 
         return date(year, month, day)
 
+
+    @staticmethod
+    def _normalize_unit_of_measure(value):
+        """
+        Normalize typed unit notation into proper mathematical symbols.
+        Examples: m^3 -> m³, m^2 -> m², km^2 -> km².
+        """
+        if value is None:
+            return None
+
+        value = str(value).strip()
+
+        if not value:
+            return None
+
+        import re
+
+        value = re.sub(r"\^([0-9]+)", r"\\1", value)
+
+        superscripts = str.maketrans({
+            "0": "⁰",
+            "1": "¹",
+            "2": "²",
+            "3": "³",
+            "4": "⁴",
+            "5": "⁵",
+            "6": "⁶",
+            "7": "⁷",
+            "8": "⁸",
+            "9": "⁹",
+        })
+
+        value = re.sub(
+            r"\\([0-9]+)",
+            lambda match: match.group(1).translate(superscripts),
+            value
+        )
+
+        return value
+
+
     @staticmethod
     def _money_decimal(value) -> Decimal:
         if value is None:
@@ -143124,19 +143165,30 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 if not isinstance(units_payload, dict):
                     units_payload = {}
 
+
                 units_done = (
                     data.get("units_done")
                     if data.get("units_done") is not None
-                    else units_payload.get("delivered_units")
+                    else units_payload.get(
+                        "units_done",
+                        units_payload.get("delivered_units")
+                    )
                 )
 
                 units_total = (
                     data.get("units_total")
                     if data.get("units_total") is not None
-                    else units_payload.get("total_units")
+                    else units_payload.get(
+                        "units_total",
+                        units_payload.get("total_units")
+                    )
                 )
 
-                certified_units = units_payload.get("certified_units")
+                certified_units = (
+                    data.get("certified_units")
+                    if data.get("certified_units") is not None
+                    else units_payload.get("certified_units")
+                )
 
                 units_done = float(units_done or 0.0)
                 units_total = float(units_total or 0.0)
@@ -143166,7 +143218,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 milestone_code = None
 
                 payload_json["units"] = {
-                    "unit_of_measure": str(units_payload.get("unit_of_measure") or "").strip() or None,
+                    "unit_of_measure": self._normalize_unit_of_measure(
+                        units_payload.get("unit_of_measure")
+                    ),
                     "delivered_units": units_done,
                     "total_units": units_total,
                     "certified_units": certified_units,

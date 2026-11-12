@@ -24250,8 +24250,21 @@ body{
 
                     <div id="revProgressUnitsWrap" class="hidden grid-cols-1 md:grid-cols-4 gap-3">
                       <div>
-                        <label class="block text-xs text-slate-500 mb-1">Unit of Measure</label>
-                        <input id="revProgressUnitOfMeasure" class="w-full border rounded px-3 py-2 text-sm" placeholder="m², tons, km, hours">
+                          <label class="block text-xs text-slate-500 mb-1">
+                              Unit of Measure
+                          </label>
+
+                          <input
+                              id="revProgressUnitOfMeasure"
+                              class="w-full border rounded px-3 py-2 text-sm"
+                              placeholder="m^2, m^3, tons, km, hours"
+                          >
+
+                          <p class="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                              Tip: Use ^2 for square units (e.g. m^2) and
+                              ^3 for cubic units (e.g. m^3).
+                              FinSage automatically formats these as m² and m³ when saving.
+                          </p>
                       </div>
 
                       <div>
