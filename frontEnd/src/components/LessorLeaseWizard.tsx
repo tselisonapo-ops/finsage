@@ -3418,7 +3418,7 @@ useEffect(() => {
           <input
             type="number"
             name="billing_amount"
-            value={form.billing_amount}
+            value={form.billing_amount ?? ""}
             onChange={updateNumber}
             readOnly={
               form.lease_classification ===
@@ -4144,9 +4144,9 @@ useEffect(() => {
               <button
                 type="button"
                 onClick={() => {
-                  const classification = (
-                    form.classification_override || ""
-                  ).toLowerCase() || "operating";
+                  const classification = String(
+                    form.lease_classification || "operating"
+                  ).toLowerCase();
                   const isManufacturerDealer = !!(form.manufacturer_dealer_lessor);
 
                   // Dr account per IFRS 16 classification:

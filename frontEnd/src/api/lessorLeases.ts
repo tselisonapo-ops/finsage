@@ -51,6 +51,11 @@ export type LessorLeasePayload = {
   customer_id: number | null;
   asset_id?: number | null;
 
+  // Additional wizard and direct-cost metadata
+  lessor_id?: number | null;
+  lease_name?: string | null;
+  cost_of_sales_account_code?: string | null;
+
   start_date: string;
   end_date?: string | null;
   lease_term_months?: number;
@@ -77,7 +82,7 @@ export type LessorLeasePayload = {
 
   manufacturer_dealer_lessor?: boolean;
 
-  billing_amount: number;
+  billing_amount: number | null;
   billing_basis: "gross" | "net";
   vat_rate: number;
 
@@ -137,6 +142,21 @@ export type LessorLeasePayload = {
 
   notes?: string | null;
 };
+
+// Finance lease rentals are calculated by the backend.
+// Never send a previously calculated rental back as
+// though it were a manually supplied contractual rental.
+function normalizeLessorLeasePayload(
+  payload: LessorLeasePayload
+): LessorLeasePayload {
+  return {
+    ...payload,
+    billing_amount:
+      payload.lease_classification === "finance"
+        ? 0
+        : payload.billing_amount,
+  };
+}
 
 export type LessorClassificationPayload = Pick<
   LessorLeasePayload,
@@ -298,11 +318,14 @@ export async function createLessorLease(
   companyId: number,
   payload: LessorLeasePayload
 ): Promise<LessorLeaseCreateResponse> {
+  const normalizedPayload =
+    normalizeLessorLeasePayload(payload);
+
   return apiFetch(
     `/api/companies/${companyId}/lessor-leases`,
     {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizedPayload),
     }
   ) as Promise<LessorLeaseCreateResponse>;
 }
@@ -325,12 +348,15 @@ export async function previewLessorTerms(
   companyId: number,
   payload: LessorLeasePayload
 ): Promise<LessorTermsPreviewResponse> {
+  const normalizedPayload =
+    normalizeLessorLeasePayload(payload);
+
   return apiFetch(
     `/api/companies/${companyId}` +
       `/lessor-leases/terms/preview`,
     {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizedPayload),
     }
   ) as Promise<LessorTermsPreviewResponse>;
 }

@@ -759,23 +759,18 @@ class LessorLeaseEngine:
 
         fair_value = self._decimal(
             data.get("fair_value")
-            or data.get(
-                "underlying_asset_fair_value"
-            )
+            or data.get("underlying_asset_fair_value")
         )
 
+        # This is the PV of the contractual lease payments,
+        # not the total initial net investment.
+        # Initial net investment also includes PV of residual values.
         pv_payments = self._decimal(
-            terms.get(
-                "initial_net_investment"
-            )
+            terms.get("pv_lease_payments")
         )
 
-        classification["present_value_lease_payments"] = (
-            float(
-                self._money_decimal(
-                    pv_payments
-                )
-            )
+        classification["present_value_lease_payments"] = float(
+            self._money_decimal(pv_payments)
         )
 
         classification["pv_fair_value_ratio"] = (
@@ -785,6 +780,18 @@ class LessorLeaseEngine:
             if fair_value > 0
             else 0
         )
+
+        # The classification was initially performed before
+        # the finance terms calculated the present value.
+        # Remove the now-obsolete missing-PV warning.
+        classification["warnings"] = [
+            warning
+            for warning in classification.get("warnings", [])
+            if warning != (
+                "Present value of lease payments was "
+                "not supplied."
+            )
+        ]
 
         return {
             "classification": classification,
@@ -1713,6 +1720,17 @@ class LessorLeaseEngine:
             opening - target_net_investment
         )
 
+        reconciliation_warning = None
+
+        if abs(implicit_rate_difference) > Decimal("1.00"):
+            reconciliation_warning = (
+                "The supplied lease payment and implicit "
+                "interest rate do not reconcile to the target "
+                "net investment. Review the payment amount, "
+                "interest rate, residual values and lease term. "
+                f"Difference: {implicit_rate_difference:.2f}."
+            )
+
         rows = []
 
         for period_no in range(1, period_count + 1):
@@ -1876,6 +1894,10 @@ class LessorLeaseEngine:
                 implicit_rate_difference
             ),
 
+            "implicit_rate_reconciliation_warning": (
+                reconciliation_warning
+            ),
+            
             "pv_lease_payments": float(
                 self._money_decimal(
                     pv_lease_payments
@@ -2291,8 +2313,15 @@ class LessorLeaseEngine:
                         remaining_after_payment * periodic_rate
                     )
 
-                    principal = cash_payment - finance_income
-                    closing = expected_closing
+                    # Advance instalments are received before the
+                    # finance income for the period is earned.
+                    # Therefore, the full cash instalment is the
+                    # principal recovery for this period.
+                    principal = cash_payment
+
+                    closing = self._money_decimal(
+                        remaining_after_payment + finance_income
+                    )
 
                 else:
                     cash_payment = payment
