@@ -235,10 +235,36 @@ const LessorLeaseWizard: React.FC<Props> = ({
   // options (lessee has 3) because the lessor may have already
   // recorded the IDC inside the asset carrying amount or expensed
   // it (manufacturer/dealer).
+  // --- Lessor IDC capture modal ---
   const [showDirectCostModal, setShowDirectCostModal] =
     useState<boolean>(false);
+
   const [directCostLeaseId, setDirectCostLeaseId] =
     useState<number | null>(null);
+
+  const [showPaidDirectCostForm, setShowPaidDirectCostForm] =
+    useState<boolean>(false);
+
+  const [directCostPaymentDate, setDirectCostPaymentDate] =
+    useState(() => {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, "0");
+      const day = String(today.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    });
+
+  const [directCostPaymentReference, setDirectCostPaymentReference] =
+    useState("");
+
+  const [directCostBankAccountId, setDirectCostBankAccountId] =
+    useState("");
+
+  const [directCostPaymentError, setDirectCostPaymentError] =
+    useState<string | null>(null);
+
+  const [directCostPaymentSubmitting, setDirectCostPaymentSubmitting] =
+    useState(false);
 
   type ScheduleResult = {
     created_or_updated?: number;
@@ -4104,10 +4130,6 @@ useEffect(() => {
       {step === 3 && renderStep3()}
 
       {/* --- IFRS 16 Lessor IDC capture modal --- */}
-      {/* Mirrors the lessee wizard's direct-cost prompt but with */}
-      {/* 4 options because the lessor may have already recorded */}
-      {/* the IDC (in the asset carrying amount or expensed for */}
-      {/* manufacturer/dealer). */}
       {showDirectCostModal && directCostLeaseId && (
         <div
           style={{
@@ -4118,187 +4140,476 @@ useEffect(() => {
             alignItems: "center",
             justifyContent: "center",
             zIndex: 9999,
+            padding: 16,
           }}
         >
           <div
             style={{
               background: "#fff",
+              color: "#111827",
               borderRadius: 12,
               padding: 24,
-              maxWidth: 520,
-              width: "90vw",
+              maxWidth: 540,
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
               boxShadow: "0 18px 50px rgba(0,0,0,0.25)",
             }}
           >
             <h3 style={{ margin: "0 0 8px", fontSize: 18 }}>
               Initial direct costs
             </h3>
-            <p style={{ margin: "0 0 16px", color: "#6b7280", fontSize: 14 }}>
-              This lease has initial direct costs of
-              <strong>{Number(form.initial_direct_costs || 0).toFixed(2)}</strong>.
-              How would you like to handle them?
+
+            <p style={{ margin: "0 0 18px", color: "#6b7280", fontSize: 14 }}>
+              This lease has initial direct costs of{" "}
+              <strong>
+                {Number(form.initial_direct_costs || 0).toFixed(2)}
+              </strong>
+              . Choose how these costs were paid or incurred.
             </p>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {/* Option 1: Create AP Bill (postMessage to parent dashboard) */}
-              <button
-                type="button"
-                onClick={() => {
-                  const classification = String(
-                    form.lease_classification || "operating"
-                  ).toLowerCase();
-                  const isManufacturerDealer = !!(form.manufacturer_dealer_lessor);
-
-                  // Dr account per IFRS 16 classification:
-                  //   Finance (ordinary):      net investment non-current
-                  //   Finance (manufacturer):  cost of sales (expensed)
-                  //   Operating:               underlying asset (deferred)
-                  const assetAccount =
-                    classification === "finance"
-                      ? (isManufacturerDealer
-                          ? (form.cost_of_sales_account_code || "PL_COS_5000")
-                          : (form.net_investment_noncurrent_account_code || "BS_NCA_1640"))
-                      : (form.underlying_asset_account_code || "BS_NCA_1500");
-
-                  window.parent?.postMessage({
-                    type: "lessor_lease_create_ap_bill",
-                    payload: {
-                      source: "lessor_lease",
-                      lease_id: directCostLeaseId,
-                      lessor_id: form.lessor_id || null,
-                      vendor_id: null, // user picks the broker/lawyer vendor in AP
-                      amount: Number(form.initial_direct_costs || 0),
-                      vat_rate: Number(form.vat_rate || 0),
-                      asset_account: assetAccount,
-                      description: `Lessor initial direct cost - $`
-                        + (form.lease_name || `Lease ${directCostLeaseId}`),
-                      reference: `LESSOR-DC-${directCostLeaseId}`,
-                      company_id: companyId,
-                      classification,
-                      manufacturer_dealer: isManufacturerDealer,
-                    },
-                  }, "*");
-                  setShowDirectCostModal(false);
-                }}
+            {!showPaidDirectCostForm ? (
+              <div
                 style={{
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  background: "#fff",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  fontWeight: 600,
-                  fontSize: 14,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
                 }}
               >
-                Create AP Bill
-                <span style={{ display: "block", fontWeight: 400, color: "#6b7280", fontSize: 12 }}>
-                  IDC paid to a third-party (broker/lawyer/valuer) - not yet recorded. Opens the AP bill form.
-                </span>
-              </button>
+                {/* Option 1: Create AP Bill */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const classification = String(
+                      form.lease_classification || "operating"
+                    ).toLowerCase();
 
-              {/* Option 2: Record as Paid (POST to backend) */}
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const bankAccountId = Number(
-                      window.prompt("Enter the bank account ID used to pay the IDC:") || 0
-                    );
-                    if (!bankAccountId) return;
-                    const paymentDate = new Date().toISOString().slice(0, 10);
+                    const isManufacturerDealer =
+                      !!form.manufacturer_dealer_lessor;
 
-                    const res = await apiFetch(
-                      `/api/companies/${companyId}/lessor-leases/${directCostLeaseId}/direct-costs/paid`,
+                    const assetAccount =
+                      classification === "finance"
+                        ? isManufacturerDealer
+                          ? (
+                              form.cost_of_sales_account_code ||
+                              "PL_COS_5000"
+                            )
+                          : (
+                              form.net_investment_noncurrent_account_code ||
+                              "BS_NCA_1640"
+                            )
+                        : (
+                            form.underlying_asset_account_code ||
+                            "BS_NCA_1500"
+                          );
+
+                    window.parent?.postMessage(
                       {
-                        method: "POST",
-                        body: JSON.stringify({
-                          bank_account_id: bankAccountId,
-                          payment_date: paymentDate,
+                        type: "lessor_lease_create_ap_bill",
+                        payload: {
+                          source: "lessor_lease",
+                          lessor_lease_id: directCostLeaseId,
+                          lessor_id: form.lessor_id || null,
+                          vendor_id: null,
                           amount: Number(form.initial_direct_costs || 0),
                           vat_rate: Number(form.vat_rate || 0),
+                          asset_account: assetAccount,
+                          description:
+                            `Lessor initial direct cost - ` +
+                            (form.lease_name || `Lease ${directCostLeaseId}`),
                           reference: `LESSOR-DC-${directCostLeaseId}`,
-                          description: `Lessor initial direct cost - $`
-                            + (form.lease_name || `Lease ${directCostLeaseId}`),
-                        }),
-                      }
+                          company_id: companyId,
+                          classification,
+                          manufacturer_dealer: isManufacturerDealer,
+                        },
+                      },
+                      "*"
                     );
-                    if (res?.ok) {
-                      alert("Initial direct cost recorded as paid.");
-                    } else {
-                      alert(res?.error || "Failed to record direct cost.");
-                    }
-                  } catch (err) {
-                    alert(err instanceof Error ? err.message : "Failed");
-                  } finally {
+
                     setShowDirectCostModal(false);
-                  }
-                }}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  background: "#fff",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  fontWeight: 600,
-                  fontSize: 14,
-                }}
-              >
-                Record as Paid
-                <span style={{ display: "block", fontWeight: 400, color: "#6b7280", fontSize: 12 }}>
-                  IDC paid at inception via cash/bank - posts Dr IDC / Dr VAT / Cr Bank immediately.
-                </span>
-              </button>
+                  }}
+                  style={{
+                    padding: "12px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    background: "#fff",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    fontWeight: 600,
+                    fontSize: 14,
+                  }}
+                >
+                  Create AP Bill
+                  <span
+                    style={{
+                      display: "block",
+                      fontWeight: 400,
+                      color: "#6b7280",
+                      fontSize: 12,
+                      marginTop: 4,
+                    }}
+                  >
+                    The cost has not yet been paid. Create a supplier bill so
+                    the cost is recognised when that bill is posted.
+                  </span>
+                </button>
 
-              {/* Option 3: Previously Recorded */}
-              <button
-                type="button"
-                onClick={() => {
-                  // IDC already sits in the asset carrying amount
-                  // (ordinary) or was expensed (manufacturer/dealer).
-                  // No journal needed - just close.
-                  setShowDirectCostModal(false);
-                }}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  background: "#fff",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  fontWeight: 600,
-                  fontSize: 14,
-                }}
-              >
-                Previously Recorded
-                <span style={{ display: "block", fontWeight: 400, color: "#6b7280", fontSize: 12 }}>
-                  IDC already inside the asset carrying amount or expensed - no journal needed.
-                </span>
-              </button>
+                {/* Option 2: Already paid */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDirectCostPaymentError(null);
+                    setShowPaidDirectCostForm(true);
+                  }}
+                  style={{
+                    padding: "12px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    background: "#fff",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    fontWeight: 600,
+                    fontSize: 14,
+                  }}
+                >
+                  Already paid
+                  <span
+                    style={{
+                      display: "block",
+                      fontWeight: 400,
+                      color: "#6b7280",
+                      fontSize: 12,
+                      marginTop: 4,
+                    }}
+                  >
+                    The cost has already been paid. Record the payment and
+                    post the recognition journal.
+                  </span>
+                </button>
 
-              {/* Option 4: Skip for now */}
-              <button
-                type="button"
-                onClick={() => setShowDirectCostModal(false)}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  background: "#fff",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  fontWeight: 600,
-                  fontSize: 14,
-                  color: "#6b7280",
-                }}
-              >
-                Skip for now
-                <span style={{ display: "block", fontWeight: 400, color: "#9ca3af", fontSize: 12 }}>
-                  Decide later - IDC remains unposted (you can capture it from the lease workspace).
-                </span>
-              </button>
-            </div>
+                {/* Option 3: Skip */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDirectCostModal(false);
+                    setShowPaidDirectCostForm(false);
+                  }}
+                  style={{
+                    padding: "12px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    background: "#fff",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    fontWeight: 600,
+                    fontSize: 14,
+                    color: "#6b7280",
+                  }}
+                >
+                  Skip for now
+                  <span
+                    style={{
+                      display: "block",
+                      fontWeight: 400,
+                      color: "#6b7280",
+                      fontSize: 12,
+                      marginTop: 4,
+                    }}
+                  >
+                    Do not recognise the initial direct costs yet. They remain
+                    excluded from the net investment until a journal is posted.
+                  </span>
+                </button>
+              </div>
+            ) : (
+              <>
+                <h4 style={{ margin: "4px 0 14px", fontSize: 15 }}>
+                  Record payment
+                </h4>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12,
+                  }}
+                >
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        marginBottom: 5,
+                      }}
+                    >
+                      Payment date
+                    </label>
+                    <input
+                      type="date"
+                      value={directCostPaymentDate}
+                      onChange={(event) =>
+                        setDirectCostPaymentDate(event.target.value)
+                      }
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        padding: 10,
+                        border: "1px solid #d1d5db",
+                        borderRadius: 7,
+                      }}
+                    />
+                    <span
+                      style={{
+                        display: "block",
+                        fontSize: 12,
+                        color: "#6b7280",
+                        marginTop: 4,
+                      }}
+                    >
+                      The payment date may be before or after the lease
+                      commencement date.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        marginBottom: 5,
+                      }}
+                    >
+                      Bank account
+                    </label>
+                    <select
+                      value={directCostBankAccountId}
+                      onChange={(event) =>
+                        setDirectCostBankAccountId(event.target.value)
+                      }
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        padding: 10,
+                        border: "1px solid #d1d5db",
+                        borderRadius: 7,
+                        background: "#fff",
+                      }}
+                    >
+                      <option value="">Select bank account...</option>
+                      {coaAccounts
+                        .filter((account) => {
+                          const description = accountText(account);
+                          return (
+                            description.includes("bank") ||
+                            description.includes("cash and cash") ||
+                            description.includes("cash equivalent")
+                          );
+                        })
+                        .map((account) => (
+                          <option
+                            key={account.id}
+                            value={account.id}
+                          >
+                            {account.code} - {account.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        marginBottom: 5,
+                      }}
+                    >
+                      Payment reference
+                    </label>
+                    <input
+                      type="text"
+                      value={directCostPaymentReference}
+                      onChange={(event) =>
+                        setDirectCostPaymentReference(event.target.value)
+                      }
+                      placeholder={`LESSOR-DC-${directCostLeaseId}`}
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        padding: 10,
+                        border: "1px solid #d1d5db",
+                        borderRadius: 7,
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      padding: 12,
+                      background: "#f9fafb",
+                      borderRadius: 8,
+                      fontSize: 13,
+                    }}
+                  >
+                    **Amount to recognise:**{" "}
+                    {Number(form.initial_direct_costs || 0).toFixed(2)}
+                  </div>
+
+                  {directCostPaymentError && (
+                    <div
+                      style={{
+                        color: "#b91c1c",
+                        background: "#fef2f2",
+                        border: "1px solid #fecaca",
+                        borderRadius: 7,
+                        padding: 10,
+                        fontSize: 13,
+                      }}
+                    >
+                      {directCostPaymentError}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      justifyContent: "flex-end",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      disabled={directCostPaymentSubmitting}
+                      onClick={() => {
+                        setShowPaidDirectCostForm(false);
+                        setDirectCostPaymentError(null);
+                      }}
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: 7,
+                        border: "1px solid #d1d5db",
+                        background: "#fff",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Back
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={directCostPaymentSubmitting}
+                      onClick={async () => {
+                        const bankAccountId = Number(
+                          directCostBankAccountId || 0
+                        );
+
+                        if (!directCostPaymentDate) {
+                          setDirectCostPaymentError(
+                            "Select the actual payment date."
+                          );
+                          return;
+                        }
+
+                        if (!bankAccountId) {
+                          setDirectCostPaymentError(
+                            "Select the bank account used for payment."
+                          );
+                          return;
+                        }
+
+                        setDirectCostPaymentSubmitting(true);
+                        setDirectCostPaymentError(null);
+
+                        try {
+                          const classification = String(
+                            form.lease_classification || "operating"
+                          ).toLowerCase();
+
+                          const isManufacturerDealer =
+                            !!form.manufacturer_dealer_lessor;
+
+                          const assetAccount =
+                            classification === "finance"
+                              ? isManufacturerDealer
+                                ? (
+                                    form.cost_of_sales_account_code ||
+                                    "PL_COS_5000"
+                                  )
+                                : (
+                                    form.net_investment_noncurrent_account_code ||
+                                    "BS_NCA_1640"
+                                  )
+                              : (
+                                  form.underlying_asset_account_code ||
+                                  "BS_NCA_1500"
+                                );
+
+                          const res = await apiFetch(
+                            `/api/companies/${companyId}/lessor-leases/${directCostLeaseId}/direct-costs/paid`,
+                            {
+                              method: "POST",
+                              body: JSON.stringify({
+                                bank_account_id: bankAccountId,
+                                payment_date: directCostPaymentDate,
+                                amount: Number(
+                                  form.initial_direct_costs || 0
+                                ),
+                                vat_rate: Number(form.vat_rate || 0),
+                                asset_account: assetAccount,
+                                reference:
+                                  directCostPaymentReference.trim() ||
+                                  `LESSOR-DC-${directCostLeaseId}`,
+                                description:
+                                  `Lessor initial direct cost - ` +
+                                  (form.lease_name ||
+                                    `Lease ${directCostLeaseId}`),
+                              }),
+                            }
+                          );
+
+                          if (!res?.ok) {
+                            throw new Error(
+                              res?.error ||
+                                "Failed to record the initial direct cost payment."
+                            );
+                          }
+
+                          setShowDirectCostModal(false);
+                          setShowPaidDirectCostForm(false);
+                        } catch (err) {
+                          setDirectCostPaymentError(
+                            err instanceof Error
+                              ? err.message
+                              : "Failed to record the initial direct cost payment."
+                          );
+                        } finally {
+                          setDirectCostPaymentSubmitting(false);
+                        }
+                      }}
+                      style={{
+                        padding: "10px 16px",
+                        borderRadius: 7,
+                        border: "1px solid #1d4ed8",
+                        background: "#1d4ed8",
+                        color: "#fff",
+                        cursor: directCostPaymentSubmitting
+                          ? "not-allowed"
+                          : "pointer",
+                        opacity: directCostPaymentSubmitting ? 0.7 : 1,
+                      }}
+                    >
+                      {directCostPaymentSubmitting
+                        ? "Posting..."
+                        : "Confirm payment"}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -58738,6 +58738,15 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS deposit_interest_beneficiary TEXT NULL,
         ADD COLUMN IF NOT EXISTS deposit_permitted_deductions TEXT NULL;
 
+        ALTER TABLE {schema}.lessor_leases
+        ADD COLUMN IF NOT EXISTS initial_direct_costs_recognised NUMERIC(18,2)
+            NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS initial_direct_costs_status TEXT
+            NOT NULL DEFAULT 'not_applicable',
+        ADD COLUMN IF NOT EXISTS initial_direct_costs_journal_id INT NULL,
+        ADD COLUMN IF NOT EXISTS initial_direct_costs_bill_id INT NULL,
+        ADD COLUMN IF NOT EXISTS initial_direct_costs_recognised_at TIMESTAMPTZ NULL;
+
         CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_asset_active_idx
             ON {schema}.lessor_leases(company_id, asset_id)
             WHERE asset_id IS NOT NULL
@@ -80812,15 +80821,56 @@ class DatabaseService:
 
                 first = schedule[0]
 
-                net_investment = round(float(
+                scheduled_net_investment = round(float(
                     first.get("opening_net_investment")
                     or lease.get("net_investment")
                     or 0
                 ), 2)
 
+                initial_direct_costs = round(float(
+                    lease.get("initial_direct_costs") or 0
+                ), 2)
+
+                initial_direct_costs_recognised = round(float(
+                    lease.get("initial_direct_costs_recognised") or 0
+                ), 2)
+
+                manufacturer_dealer = self._bool(
+                    lease.get("manufacturer_dealer_lessor")
+                    or lease.get("manufacturer_or_dealer_lessor")
+                    or lease.get("manufacturer_dealer")
+                )
+
+                if initial_direct_costs_recognised < 0:
+                    raise ValueError(
+                        "Recognised initial direct costs cannot be negative"
+                    )
+
+                if initial_direct_costs_recognised > initial_direct_costs:
+                    raise ValueError(
+                        "Recognised initial direct costs cannot exceed "
+                        "the original initial direct costs"
+                    )
+
+                if manufacturer_dealer:
+                    net_investment = scheduled_net_investment
+                else:
+                    unrecognised_direct_costs = round(
+                        initial_direct_costs
+                        - initial_direct_costs_recognised,
+                        2,
+                    )
+
+                    net_investment = round(
+                        scheduled_net_investment
+                        - unrecognised_direct_costs,
+                        2,
+                    )
+
                 if net_investment <= 0:
                     raise ValueError(
-                        "Opening net investment must be greater than zero"
+                        "Opening net investment after initial direct cost "
+                        "recognition must be greater than zero"
                     )
 
                 current_portion = round(float(
@@ -80831,13 +80881,48 @@ class DatabaseService:
                     first.get("noncurrent_portion") or 0
                 ), 2)
 
-                if current_portion + noncurrent_portion == 0:
-                    noncurrent_portion = net_investment
+                scheduled_portions_total = round(
+                    current_portion + noncurrent_portion,
+                    2,
+                )
 
+                if scheduled_portions_total <= 0:
+                    current_portion = 0.00
+                    noncurrent_portion = scheduled_net_investment
+
+                elif round(
+                    scheduled_portions_total - scheduled_net_investment,
+                    2,
+                ) != 0:
+                    raise ValueError(
+                        "The schedule current and non-current portions "
+                        "do not reconcile to the scheduled opening "
+                        "net investment"
+                    )
+
+                # Adjust both classifications proportionately when
+                # some initial direct costs remain unrecognised.
+                if scheduled_net_investment > 0:
+                    adjustment_ratio = (
+                        net_investment / scheduled_net_investment
+                    )
+
+                    current_portion = round(
+                        current_portion * adjustment_ratio,
+                        2,
+                    )
+
+                    noncurrent_portion = round(
+                        noncurrent_portion * adjustment_ratio,
+                        2,
+                    )
+
+                # Allocate any rounding difference once to the
+                # non-current portion.
                 difference = round(
-                    net_investment -
-                    current_portion -
-                    noncurrent_portion,
+                    net_investment
+                    - current_portion
+                    - noncurrent_portion,
                     2,
                 )
 
@@ -81868,9 +81953,20 @@ class DatabaseService:
             "purchase_option_expected": bool(
                 payload.get("purchase_option_expected")
             ),
+
             "initial_direct_costs": (
                 payload.get("initial_direct_costs") or 0
             ),
+            "initial_direct_costs_recognised": 0,
+            "initial_direct_costs_status": (
+                "pending"
+                if float(payload.get("initial_direct_costs") or 0) > 0
+                else "not_applicable"
+            ),
+            "initial_direct_costs_journal_id": None,
+            "initial_direct_costs_bill_id": None,
+            "initial_direct_costs_recognised_at": None,
+
             "security_deposit_amount": (
                 payload.get("security_deposit_amount") or 0
             ),
@@ -82037,6 +82133,36 @@ class DatabaseService:
                 ),
         }
 
+        idc_amount = float(params.get("initial_direct_costs") or 0)
+        idc_status = str(
+            params.get("initial_direct_costs_status") or ""
+        ).strip().lower()
+
+        if idc_amount < 0:
+            raise ValueError(
+                "Initial direct costs cannot be negative"
+            )
+
+        allowed_idc_statuses = {
+            "not_applicable",
+            "not_incurred",
+            "incurred_unpaid",
+            "paid",
+        }
+
+        if idc_status not in allowed_idc_statuses:
+            raise ValueError(
+                f"Invalid initial direct costs status: {idc_status}"
+            )
+
+        if idc_amount == 0:
+            params["initial_direct_costs_status"] = "not_applicable"
+
+        elif idc_status == "not_applicable":
+            raise ValueError(
+                "Initial direct costs have an amount but no valid recognition status"
+            )
+            
         for key, value in resolved_accounts.items():
             if not params.get(key):
                 params[key] = value
@@ -82075,6 +82201,11 @@ class DatabaseService:
                 purchase_option_amount,
                 purchase_option_expected,
                 initial_direct_costs,
+                initial_direct_costs_recognised,
+                initial_direct_costs_status,
+                initial_direct_costs_journal_id,
+                initial_direct_costs_bill_id,
+                initial_direct_costs_recognised_at,
                 initial_direct_cost_expense_account_code,
                 initial_direct_cost_asset_account_code,
                 security_deposit_amount,
@@ -82153,6 +82284,11 @@ class DatabaseService:
                 %(purchase_option_amount)s,
                 %(purchase_option_expected)s,
                 %(initial_direct_costs)s,
+                %(initial_direct_costs_recognised)s,
+                %(initial_direct_costs_status)s,
+                %(initial_direct_costs_journal_id)s,
+                %(initial_direct_costs_bill_id)s,
+                %(initial_direct_costs_recognised_at)s,
                 %(initial_direct_cost_expense_account_code)s,
                 %(initial_direct_cost_asset_account_code)s,
                 %(security_deposit_amount)s,
@@ -82209,7 +82345,6 @@ class DatabaseService:
             raise ValueError("Failed to create lessor lease")
 
         return row
-
 
     def save_lessor_billing_schedule(
         self,
@@ -112967,6 +113102,12 @@ class DatabaseService:
         params += [int(limit), int(offset)]
         return self.fetch_all(sql, tuple(params)) or []
 
+    def insert_bill_with_lines(self, company_id: int, header: dict, lines: list[dict]) -> int:
+        with self._conn_cursor() as (conn, cur):
+            bill_id = self._insert_bill_with_lines_cur(company_id, header, lines, cur)
+            conn.commit()
+            return int(bill_id)
+        
     def _insert_bill_with_lines_cur(self, company_id: int, header: dict, lines: list[dict], cur) -> int:
         """
         Insert or update bill + lines + GRN links.
@@ -113759,13 +113900,6 @@ class DatabaseService:
 
         if cur.rowcount != 1:
             raise Exception("Failed to mark bill as accounted via acquisition")
-        
-
-    def insert_bill_with_lines(self, company_id: int, header: dict, lines: list[dict]) -> int:
-        with self._conn_cursor() as (conn, cur):
-            bill_id = self._insert_bill_with_lines_cur(company_id, header, lines, cur)
-            conn.commit()
-            return int(bill_id)
 
     def _post_bill_to_gl_cur(
         self,
@@ -113796,7 +113930,15 @@ class DatabaseService:
 
         # ✅ lock bill row FIRST
         cur.execute(
-            f"SELECT status, posted_journal_id FROM {schema}.bills WHERE id=%s FOR UPDATE;",
+            f"""
+            SELECT
+                status,
+                posted_journal_id,
+                lessor_lease_id
+            FROM {schema}.bills
+            WHERE id=%s
+            FOR UPDATE
+            """,
             (int(bill_id),),
         )
         hdr = cur.fetchone()
@@ -113804,11 +113946,77 @@ class DatabaseService:
             raise ValueError("Bill not found")
 
         already = hdr.get("posted_journal_id")
+
         if already:
-            return int(already)
+            already = int(already)
+            existing_lessor_lease_id = hdr.get("lessor_lease_id")
+
+            # Ordinary posted bills retain the existing idempotent behaviour.
+            if not existing_lessor_lease_id:
+                return already
+
+            # For lessor IDC bills, verify that the lease tracking
+            # agrees with the previously posted bill and journal.
+            cur.execute(
+                f"""
+                SELECT
+                    initial_direct_costs,
+                    initial_direct_costs_recognised,
+                    initial_direct_costs_status,
+                    initial_direct_costs_journal_id,
+                    initial_direct_costs_bill_id
+                FROM {schema}.lessor_leases
+                WHERE company_id=%s
+                  AND id=%s
+                FOR UPDATE
+                """,
+                (
+                    int(company_id),
+                    int(existing_lessor_lease_id),
+                ),
+            )
+
+            existing_idc = cur.fetchone()
+
+            if not existing_idc:
+                raise ValueError(
+                    "POSTED_LESSOR_LEASE_NOT_FOUND|"
+                    "The bill has an existing journal, but its linked "
+                    "lessor lease could not be found."
+                )
+
+            tracking_matches = (
+                int(existing_idc.get("initial_direct_costs_bill_id") or 0)
+                == int(bill_id)
+                and
+                int(existing_idc.get("initial_direct_costs_journal_id") or 0)
+                == already
+                and
+                money(existing_idc.get("initial_direct_costs_recognised") or 0)
+                >= money(existing_idc.get("initial_direct_costs") or 0)
+                and
+                str(existing_idc.get("initial_direct_costs_status") or "").lower()
+                == "recognised"
+            )
+
+            if not tracking_matches:
+                raise ValueError(
+                    "POSTED_LESSOR_IDC_TRACKING_INCONSISTENT|"
+                    f"bill_id={bill_id}|"
+                    f"journal_id={already}|"
+                    f"lease_id={existing_lessor_lease_id}|"
+                    "The bill is already posted, but the lessor IDC "
+                    "tracking does not agree. Manual reconciliation "
+                    "is required; no additional journal will be posted."
+                )
+
+            return already
 
         if (hdr.get("status") or "").lower() == "posted":
-            raise ValueError("Bill status is posted but posted_journal_id is NULL (data inconsistency)")
+            raise ValueError(
+                "Bill status is posted but posted_journal_id is NULL "
+                "(data inconsistency)"
+            )
 
         bill = self.get_bill_full(company_id, bill_id)
         if not bill:
@@ -113883,6 +114091,12 @@ class DatabaseService:
 
         linked_amt = money(sum(float(r.get("amount") or 0) for r in links))
 
+        if bill.get("lessor_lease_id") and linked_amt > 0:
+            raise ValueError(
+                "LESSOR_IDC_GRNI_NOT_SUPPORTED|"
+                "Lessor initial direct costs must be posted "
+                "directly to the net investment account, not through GRNI."
+            )
         # ----------------------------
         # ✅ GRNI LOGIC (the missing part)
         # ----------------------------
@@ -114014,6 +114228,7 @@ class DatabaseService:
                 "vendor_id": vend_id if vend_id is not None and code == AP_ACCOUNT else None,
             })
 
+
         entry.update({
             "lines": posting_lines,
             "currency": bill.get("currency") or "USD",
@@ -114026,14 +114241,183 @@ class DatabaseService:
             "updated_by_user_id": bill.get("updated_by_user_id"),
         })
 
-        journal_id = int(self.post_journal(company_id, entry, cur=cur) or 0)
+        # -------------------------------------------------
+        # LESSOR IFRS 16 INITIAL DIRECT COSTS VALIDATION
+        # -------------------------------------------------
+        lessor_idc = None
+        lessor_lease_id = bill.get("lessor_lease_id")
+
+        if lessor_lease_id:
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.lessor_leases
+                WHERE company_id=%s
+                  AND id=%s
+                FOR UPDATE
+                """,
+                (int(company_id), int(lessor_lease_id)),
+            )
+
+            lessor_idc = cur.fetchone()
+
+            if not lessor_idc:
+                raise ValueError(
+                    f"LESSOR_LEASE_NOT_FOUND|lease_id={lessor_lease_id}"
+                )
+
+            if self._bool(
+                lessor_idc.get("manufacturer_dealer_lessor")
+                or lessor_idc.get("manufacturer_or_dealer_lessor")
+                or lessor_idc.get("manufacturer_dealer")
+            ):
+                raise ValueError(
+                    "LESSOR_IDC_NOT_CAPITALISED|"
+                    "Manufacturer/dealer lessor initial direct costs "
+                    "must not be capitalised into net investment."
+                )
+
+            idc_total = money(
+                lessor_idc.get("initial_direct_costs") or 0
+            )
+
+            idc_recognised = money(
+                lessor_idc.get("initial_direct_costs_recognised") or 0
+            )
+
+            idc_outstanding = money(
+                idc_total - idc_recognised
+            )
+
+            idc_status = str(
+                lessor_idc.get("initial_direct_costs_status") or ""
+            ).strip().lower()
+
+            if idc_total <= 0:
+                raise ValueError(
+                    "LESSOR_IDC_NOT_CONFIGURED|"
+                    "The linked lease has no initial direct costs."
+                )
+
+            if idc_outstanding <= 0:
+                raise ValueError(
+                    "LESSOR_IDC_ALREADY_RECOGNISED|"
+                    "There are no outstanding initial direct costs."
+                )
+
+            if idc_status != "incurred_unpaid":
+                raise ValueError(
+                    "LESSOR_IDC_INVALID_STATUS|"
+                    f"Expected incurred_unpaid, found {idc_status}"
+                )
+
+            if lessor_idc.get("initial_direct_costs_bill_id"):
+                raise ValueError(
+                    "LESSOR_IDC_ALREADY_LINKED_TO_BILL|"
+                    f"Existing bill ID: "
+                    f"{lessor_idc.get('initial_direct_costs_bill_id')}"
+                )
+
+            # Resolve the two permitted net investment accounts.
+            ni_codes = set()
+
+            for field in (
+                "net_investment_current_account_code",
+                "net_investment_noncurrent_account_code",
+            ):
+                raw_code = str(
+                    lessor_idc.get(field) or ""
+                ).strip()
+
+                if raw_code:
+                    ni_codes.add(
+                        resolve_posting(company_id, raw_code)
+                    )
+
+            if not ni_codes:
+                raise ValueError(
+                    "LESSOR_NET_INVESTMENT_ACCOUNTS_MISSING|"
+                    "The lease has no configured net investment accounts."
+                )
+
+            # Validate the final journal lines.
+            idc_debits = 0.0
+            idc_credits = 0.0
+
+            for jl in posting_lines:
+                resolved_code = resolve_posting(
+                    company_id,
+                    str(jl.get("account_code") or ""),
+                )
+
+                if resolved_code in ni_codes:
+                    idc_debits += money(jl.get("debit") or 0)
+                    idc_credits += money(jl.get("credit") or 0)
+
+            idc_debits = money(idc_debits)
+            idc_credits = money(idc_credits)
+
+            if idc_credits > 0:
+                raise ValueError(
+                    "LESSOR_IDC_INVALID_CREDIT|"
+                    "The IDC bill must debit net investment, "
+                    "not credit it."
+                )
+
+            if abs(idc_debits - idc_outstanding) > 0.01:
+                raise ValueError(
+                    "LESSOR_IDC_AMOUNT_MISMATCH|"
+                    f"Expected net investment debit={idc_outstanding}, "
+                    f"found={idc_debits}"
+                )
+
+        journal_id = int(
+            self.post_journal(company_id, entry, cur=cur) or 0
+        )
 
         if journal_id <= 0:
             raise ValueError("Failed to post bill journal")
 
-            if hasattr(self, "requires_notes") and self.requires_notes(code):
-                if hasattr(self, "insert_note"):
-                    self.insert_note(company_id, journal_id, code, desc, cur=cur)
+
+        # -------------------------------------------------
+        # RECOGNISE LESSOR INITIAL DIRECT COSTS
+        # -------------------------------------------------
+        if lessor_idc is not None:
+            cur.execute(
+                f"""
+                UPDATE {schema}.lessor_leases
+                SET
+                    initial_direct_costs_recognised =
+                        initial_direct_costs,
+                    initial_direct_costs_status = 'recognised',
+                    initial_direct_costs_journal_id = %s,
+                    initial_direct_costs_bill_id = %s,
+                    initial_direct_costs_recognised_at = NOW(),
+                    updated_at = NOW()
+                WHERE company_id = %s
+                  AND id = %s
+                  AND initial_direct_costs_bill_id IS NULL
+                  AND initial_direct_costs_recognised <
+                      initial_direct_costs
+                RETURNING id
+                """,
+                (
+                    journal_id,
+                    int(bill_id),
+                    int(company_id),
+                    int(lessor_lease_id),
+                ),
+            )
+
+            idc_update = cur.fetchone()
+
+            if not idc_update:
+                raise ValueError(
+                    "LESSOR_IDC_RECOGNITION_UPDATE_FAILED|"
+                    "The bill journal was created, but the lease "
+                    "IDC tracking update could not be completed. "
+                    "The transaction must be rolled back."
+                )
 
         # stamp posted (idempotent)
         cur.execute(
@@ -114048,7 +114432,14 @@ class DatabaseService:
             """,
             (journal_id, int(bill_id)),
         )
-        _ = cur.fetchone()
+        bill_update = cur.fetchone()
+
+        if not bill_update:
+            raise ValueError(
+                "BILL_POSTING_STAMP_FAILED|"
+                "The bill could not be marked as posted. "
+                "The transaction must be rolled back."
+            )
 
         # publish engagement posting activity (TEMP hardcoded bridge for validation)
         engagement_company_id = (
@@ -114089,6 +114480,7 @@ class DatabaseService:
 
         return journal_id
 
+
     def post_bill_to_gl(
         self,
         company_id: int,
@@ -114099,16 +114491,27 @@ class DatabaseService:
         cur=None,
     ) -> int:
         if cur is not None:
-            return self._post_bill_to_gl_cur(company_id, bill_id, jlines=jlines, build_mode=build_mode, cur=cur)
+            return self._post_bill_to_gl_cur(
+                company_id,
+                bill_id,
+                jlines=jlines,
+                cur=cur,
+            )
 
         with self._conn_cursor() as (conn, _cur):
             try:
-                jid = self._post_bill_to_gl_cur(company_id, bill_id, jlines=jlines, cur=_cur)
+                jid = self._post_bill_to_gl_cur(
+                    company_id,
+                    bill_id,
+                    jlines=jlines,
+                    cur=_cur,
+                )
                 conn.commit()
                 return jid
             except Exception:
                 conn.rollback()
                 raise
+
 
     def validate_invoice_stock_before_post(
         self,
