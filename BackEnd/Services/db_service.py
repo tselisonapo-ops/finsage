@@ -81959,7 +81959,7 @@ class DatabaseService:
             ),
             "initial_direct_costs_recognised": 0,
             "initial_direct_costs_status": (
-                "pending"
+                "incurred_unpaid"
                 if float(payload.get("initial_direct_costs") or 0) > 0
                 else "not_applicable"
             ),
