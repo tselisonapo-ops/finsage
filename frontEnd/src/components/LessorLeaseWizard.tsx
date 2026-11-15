@@ -21,6 +21,7 @@ import type {
   OperatingLeaseTermsPreview,
   LessorClassification,
   LessorClassificationResult,
+  LessorLeaseCreateResponse,
   LessorLeasePayload,
   LessorTermsPreview,
 } from "../api/lessorLeases";
@@ -271,15 +272,15 @@ const LessorLeaseWizard: React.FC<Props> = ({
     items?: unknown[];
   };
 
-  type CreateLessorLeaseResponse = {
-    ok?: boolean;
-    item?: { id?: number };
-    commencement_journal_id?: number | null;
-    accounting_schedule_count?: number;
-    billing_schedule_count?: number;
-    accounting_schedule?: unknown[];
-    message?: string;
-  };
+  // NOTE: The local CreateLessorLeaseResponse shadow type has been
+  // removed. We now import LessorLeaseCreateResponse from
+  // ../api/lessorLeases, which carries the IDC fields
+  // (initial_direct_costs, initial_direct_costs_recognised,
+  // initial_direct_costs_status, initial_direct_costs_journal_id,
+  // initial_direct_costs_bill_id) and the commencement/schedule
+  // metadata (commencement_journal_id, accounting_schedule_count,
+  // billing_schedule_count, accounting_schedule, message) returned by
+  // the create-and-commence endpoint.
 
   const [scheduleResult, setScheduleResult] =
   useState<ScheduleResult | null>(null);
@@ -1457,7 +1458,7 @@ useEffect(() => {
       const response = await createLessorLease(
         companyId,
         payload
-      ) as CreateLessorLeaseResponse;
+      ) as LessorLeaseCreateResponse;
       const leaseId = Number(response?.item?.id || 0);
 
       if (!leaseId) {
@@ -1474,12 +1475,46 @@ useEffect(() => {
       });
 
       // --- IFRS 16 Lessor IDC capture prompt ---
-      // If initial_direct_costs > 0, show the 4-option modal so the
-      // user can choose how to handle the IDC (AP bill / paid /
-      // previously recorded / skip). The lease itself is already
-      // created and commenced at this point.
-      const idcAmount = Number(form.initial_direct_costs || 0);
-      if (idcAmount > 0) {
+      // Trigger the modal based on the persisted lease state returned
+      // by the backend, NOT on the form's initial_direct_costs value.
+      // This ensures:
+      //   * A corrected or re-commenced lease does not re-prompt for
+      //     IDCs that were already recognised via a journal or AP bill.
+      //   * The trigger only fires when there are incurred IDCs that
+      //     have not yet been recognised in the GL.
+      // The relevant fields are returned on response.item by the
+      // create-and-commence endpoint:
+      //   initial_direct_costs            (decimal string -> number)
+      //   initial_direct_costs_recognised (decimal string -> number)
+      //   initial_direct_costs_status     ("incurred_unpaid" etc.)
+      //   initial_direct_costs_journal_id (null until a journal posts)
+      //   initial_direct_costs_bill_id    (null until an AP bill links)
+      const idcIncurred = Number(
+        response.item?.initial_direct_costs || 0
+      );
+      const idcRecognised = Number(
+        response.item?.initial_direct_costs_recognised || 0
+      );
+      const idcStatus = String(
+        response.item?.initial_direct_costs_status || ""
+      ).toLowerCase();
+      const hasIdcJournal = Boolean(
+        response.item?.initial_direct_costs_journal_id
+      );
+      const hasIdcBill = Boolean(
+        response.item?.initial_direct_costs_bill_id
+      );
+
+      const idcPendingRecognition =
+        idcIncurred > 0 &&
+        idcRecognised < idcIncurred &&
+        !hasIdcJournal &&
+        !hasIdcBill &&
+        (idcStatus === "" ||
+          idcStatus === "incurred_unpaid" ||
+          idcStatus === "incurred");
+
+      if (idcPendingRecognition) {
         setDirectCostLeaseId(leaseId);
         setShowDirectCostModal(true);
       }
@@ -1489,6 +1524,14 @@ useEffect(() => {
         journalId: response.commencement_journal_id,
         billingPeriods: response.billing_schedule_count,
         accountingPeriods: response.accounting_schedule_count,
+        idc: {
+          incurred: idcIncurred,
+          recognised: idcRecognised,
+          status: idcStatus,
+          hasJournal: hasIdcJournal,
+          hasBill: hasIdcBill,
+          pendingRecognition: idcPendingRecognition,
+        },
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create and commence lessor lease");

@@ -297,16 +297,63 @@ export type LessorTermsPreviewResponse = {
   terms: LessorTermsPreview;
 };
 
+// ============================================================
+// Initial-direct-cost recognition status
+//
+// Returned on the lease item by the create-and-commence endpoint
+// and by GET /lessor-leases/:id. Drives whether the IDC capture
+// modal is shown after lease creation.
+//
+//   incurred_unpaid      IDCs captured but no AP bill, no payment
+//                        journal. The modal's three options
+//                        (Create AP Bill / Already paid / Skip)
+//                        exist to resolve this state.
+//   incurred_paid        IDCs paid in cash but not yet recognised
+//                        via a journal. Only the "Already paid"
+//                        option applies.
+//   recognised_journal   IDCs recognised via a recognition journal.
+//                        Modal must NOT re-trigger.
+//   recognised_bill      IDCs recognised via an AP bill.
+//                        Modal must NOT re-trigger.
+//   none                 No IDCs on the lease.
+// ============================================================
+export type LessorDirectCostStatus =
+  | "incurred_unpaid"
+  | "incurred_paid"
+  | "recognised_journal"
+  | "recognised_bill"
+  | "none";
+
+export type LessorLeaseItem = {
+  id: number;
+
+  contract_no?: string | null;
+  contract_name?: string | null;
+  lease_classification?: string | null;
+  status?: string | null;
+
+  // --- Initial direct cost state ---
+  // The backend returns these as decimal strings; the create helper
+  // below normalises them to numbers before returning, so callers
+  // can compare directly without re-casting.
+  initial_direct_costs?: string | number;
+  initial_direct_costs_recognised?: string | number;
+  initial_direct_costs_status?: LessorDirectCostStatus | string;
+  initial_direct_costs_journal_id?: number | null;
+  initial_direct_costs_bill_id?: number | null;
+};
+
 export type LessorLeaseCreateResponse = {
   ok: boolean;
+  message?: string;
 
-  item: {
-    id: number;
-    contract_no?: string | null;
-    contract_name?: string | null;
-    lease_classification?: string | null;
-    status?: string | null;
-  };
+  item: LessorLeaseItem;
+
+  // Day-1 journal + schedule metadata returned by create-and-commence.
+  commencement_journal_id?: number | null;
+  accounting_schedule_count?: number;
+  billing_schedule_count?: number;
+  accounting_schedule?: unknown[];
 };
 
 export type LessorClassificationResponse = {
@@ -321,13 +368,26 @@ export async function createLessorLease(
   const normalizedPayload =
     normalizeLessorLeasePayload(payload);
 
-  return apiFetch(
+  const response = await apiFetch(
     `/api/companies/${companyId}/lessor-leases`,
     {
       method: "POST",
       body: JSON.stringify(normalizedPayload),
     }
-  ) as Promise<LessorLeaseCreateResponse>;
+  ) as LessorLeaseCreateResponse;
+
+  // Normalise decimal-string fields on the item to numbers so the
+  // IDC-modal trigger logic in the wizard compares apples to apples
+  // and does not have to keep doing Number(...) at every call site.
+  if (response?.item) {
+    const item = response.item;
+    item.initial_direct_costs = Number(item.initial_direct_costs || 0);
+    item.initial_direct_costs_recognised = Number(
+      item.initial_direct_costs_recognised || 0
+    );
+  }
+
+  return response;
 }
 
 export async function previewLessorClassification(
