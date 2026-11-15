@@ -81685,10 +81685,23 @@ class DatabaseService:
             )
 
             if total_debit != total_credit:
+                line_details = []
+
+                for index, line in enumerate(lines, start=1):
+                    line_details.append(
+                        f"Line {index}: "
+                        f"account={line.get('account_code')}, "
+                        f"memo={line.get('memo')}, "
+                        f"debit={line.get('debit')}, "
+                        f"credit={line.get('credit')}"
+                    )
+
                 raise ValueError(
                     f"Unbalanced lessor Day 1 journal: "
                     f"debits={total_debit:.2f}, "
-                    f"credits={total_credit:.2f}"
+                    f"credits={total_credit:.2f}, "
+                    f"difference={total_debit - total_credit:.2f}. "
+                    f"LINES: {' | '.join(line_details)}"
                 )
 
             description_parts = []
