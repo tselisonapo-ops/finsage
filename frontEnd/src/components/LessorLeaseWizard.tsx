@@ -3719,15 +3719,16 @@ useEffect(() => {
 
         <div className="field-row">
           <label>Interest beneficiary *</label>
-          <select
-            name="deposit_interest_beneficiary"
-            value={form.deposit_interest_beneficiary || ""}
-            onChange={updateText}
-          >
-            <option value="">Select beneficiary...</option>
-            <option value="lessee">Lessee / tenant</option>
-            <option value="lessor">Lessor</option>
-          </select>
+            <select
+              name="deposit_interest_beneficiary"
+              value={form.deposit_interest_beneficiary || ""}
+              onChange={updateText}
+            >
+              <option value="">Select beneficiary...</option>
+              <option value="lessee">Lessee / tenant</option>
+              <option value="lessor">Lessor</option>
+              <option value="not_applicable">Not applicable — no interest</option>
+            </select>
           <small className="field-help">
             For South African residential deposits the
             beneficiary must be the lessee under RHA s4B.
