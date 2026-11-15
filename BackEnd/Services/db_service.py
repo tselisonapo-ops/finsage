@@ -81319,11 +81319,23 @@ class DatabaseService:
                     ),
                 })
 
-                if round(deposit_amount - deposit_liability, 2) != 0:
+                deposit_difference = round(
+                    deposit_amount - deposit_liability,
+                    2,
+                )
+
+                if deposit_difference != 0:
                     raise ValueError(
-                        "The security deposit cash receipt and initial "
-                        "liability do not match. Additional accounting "
-                        "treatment is required before posting."
+                        "Security deposit reconciliation diagnostic: "
+                        f"cash_received={deposit_amount:.2f}; "
+                        f"initial_liability={deposit_liability:.2f}; "
+                        f"difference={deposit_difference:.2f}; "
+                        f"treatment_branch="
+                        f"{deposit_preview.get('treatment_branch')}; "
+                        f"requires_substance_classification="
+                        f"{deposit_preview.get('requires_substance_classification')}; "
+                        f"discount_deferred="
+                        f"{deposit_preview.get('discount_deferred')}."
                     )
 
             # ---------------------------------------------------------
