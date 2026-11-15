@@ -1863,7 +1863,18 @@ class LessorLeaseEngine:
             opening - target_net_investment,
         )
 
+        # When FinSage calculates the periodic payment, the
+        # payment is rounded to cents for billing. That rounding
+        # must not change the target initial net investment.
+        # The final instalment absorbs the resulting rounding
+        # difference in the schedule below.
+        if payment_calculated:
+            opening = self._money_decimal(
+                target_net_investment
+            )
+
         initial_net_investment = opening
+
         # Show the actual PV of payments separately from residuals.
         pv_lease_payments = self._money_decimal(
             opening - pv_residual_values
@@ -1888,11 +1899,37 @@ class LessorLeaseEngine:
 
         rows = []
 
+
         for period_no in range(1, period_count + 1):
             last_period = period_no == period_count
 
+            expected_closing = self._money_decimal(
+                total_residual
+            )
+
             if timing == "advance":
                 cash_payment = payment
+
+                # An advance payment is made before the period's
+                # finance income is recognised. Adjust the final
+                # payment so the closing balance equals residual.
+                if last_period:
+                    cash_payment = self._money_decimal(
+                        opening
+                        - (
+                            expected_closing
+                            / (
+                                Decimal("1")
+                                + periodic_rate
+                            )
+                        )
+                    )
+
+                if cash_payment < 0:
+                    raise ValueError(
+                        f"Invalid final advance payment in "
+                        f"period {period_no}."
+                    )
 
                 if cash_payment > opening:
                     raise ValueError(
@@ -1908,25 +1945,45 @@ class LessorLeaseEngine:
                     remaining_after_payment * periodic_rate
                 )
 
-                principal = cash_payment - finance_income
+                principal = self._money_decimal(
+                    cash_payment - finance_income
+                )
 
                 closing = self._money_decimal(
                     remaining_after_payment + finance_income
                 )
+
+                if last_period:
+                    closing = expected_closing
 
             else:
                 finance_income = self._money_decimal(
                     opening * periodic_rate
                 )
 
-                cash_payment = payment
+                if last_period:
+                    # Final arrears payment clears the remaining
+                    # net investment down to the expected residual.
+                    cash_payment = self._money_decimal(
+                        opening
+                        + finance_income
+                        - expected_closing
+                    )
+                    closing = expected_closing
+                else:
+                    cash_payment = payment
 
-                closing = self._money_decimal(
-                    opening + finance_income - cash_payment
-                )
+                    closing = self._money_decimal(
+                        opening + finance_income - cash_payment
+                    )
 
                 principal = self._money_decimal(
                     cash_payment - finance_income
+                )
+
+            if cash_payment < 0:
+                raise ValueError(
+                    f"Invalid lease payment in period {period_no}."
                 )
 
             if principal < 0:
@@ -1959,6 +2016,7 @@ class LessorLeaseEngine:
             })
 
             opening = closing
+
 
         # Calculate current/noncurrent portions once the complete
         # schedule has been generated.
