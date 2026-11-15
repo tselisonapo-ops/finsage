@@ -81302,6 +81302,23 @@ class DatabaseService:
                     or lease.get("manufacturer_dealer")
                 )
 
+                print("\nLESSOR FINANCE RECONCILIATION")
+                print("Classification:", classification)
+                print("Manufacturer/dealer:", manufacturer_dealer)
+                print("Scheduled net investment:", scheduled_net_investment)
+                print("Initial direct costs:", initial_direct_costs)
+                print("Recognised direct costs:", initial_direct_costs_recognised)
+                print("Calculated net investment:", net_investment)
+                print("Current portion:", current_portion)
+                print("Non-current portion:", noncurrent_portion)
+                print("Fair value:", fair_value)
+                print("Carrying amount:", carrying_amount)
+                print("Gain/loss:", gain_loss)
+                print(
+                    "Net investment less fair value:",
+                    round(net_investment - fair_value, 2),
+                )
+
                 if manufacturer_dealer:
                     gain_loss = round(
                         net_investment - carrying_amount,
