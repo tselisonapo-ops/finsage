@@ -81302,6 +81302,18 @@ class DatabaseService:
                     or lease.get("manufacturer_dealer")
                 )
 
+
+                if manufacturer_dealer:
+                    gain_loss = round(
+                        net_investment - carrying_amount,
+                        2,
+                    )
+                else:
+                    gain_loss = round(
+                        fair_value - carrying_amount,
+                        2,
+                    )
+
                 print("\nLESSOR FINANCE RECONCILIATION")
                 print("Classification:", classification)
                 print("Manufacturer/dealer:", manufacturer_dealer)
@@ -81318,18 +81330,7 @@ class DatabaseService:
                     "Net investment less fair value:",
                     round(net_investment - fair_value, 2),
                 )
-
-                if manufacturer_dealer:
-                    gain_loss = round(
-                        net_investment - carrying_amount,
-                        2,
-                    )
-                else:
-                    gain_loss = round(
-                        fair_value - carrying_amount,
-                        2,
-                    )
-
+                
                 if gain_loss > 0 and not gain_code:
                     raise ValueError(
                         "disposal_gain_account_code is required"
