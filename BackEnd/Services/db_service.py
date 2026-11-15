@@ -81631,6 +81631,33 @@ class DatabaseService:
                     )
 
             # ---------------------------------------------------------
+            # TEMPORARY DAY 1 JOURNAL DIAGNOSTIC
+            # ---------------------------------------------------------
+
+            debit_total = sum(
+                Decimal(str(line.get("debit", 0) or 0))
+                for line in lines
+            )
+
+            credit_total = sum(
+                Decimal(str(line.get("credit", 0) or 0))
+                for line in lines
+            )
+
+            print("\nLESSOR DAY 1 JOURNAL DIAGNOSTIC")
+
+            for line in lines:
+                print(
+                    line.get("account_code"),
+                    line.get("memo"),
+                    "DR =", line.get("debit"),
+                    "CR =", line.get("credit"),
+                )
+
+            print("TOTAL DEBITS:", debit_total)
+            print("TOTAL CREDITS:", credit_total)
+            print("DIFFERENCE:", debit_total - credit_total)
+            # ---------------------------------------------------------
             # FINAL JOURNAL VALIDATION
             # ---------------------------------------------------------
 
