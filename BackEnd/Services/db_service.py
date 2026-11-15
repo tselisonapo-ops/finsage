@@ -81149,16 +81149,6 @@ class DatabaseService:
                         f"{deposit_preview.get('treatment_branch')}."
                     )
 
-                # Legacy guard -- preserved for callers that still
-                # pass security_deposit_discount_deferred=True.
-                if deposit_preview.get("discount_deferred"):
-                    raise ValueError(
-                        "The discounted security deposit cannot be "
-                        "automatically posted yet. The accounting treatment "
-                        "for the difference between cash received and the "
-                        "initial deposit liability must first be configured."
-                    )
-
                 deposit_liability = round(float(
                     deposit_preview.get("initial_liability") or 0
                 ), 2)
