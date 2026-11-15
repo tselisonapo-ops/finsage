@@ -1849,6 +1849,20 @@ class LessorLeaseEngine:
             timing=timing,
             residual_value=total_residual,
         )
+
+        print("\nLESSOR PAYMENT PRECISION CHECK")
+        print("Target net investment:", target_net_investment)
+        print("Periodic payment:", payment)
+        print("Period count:", period_count)
+        print("Periodic rate:", periodic_rate)
+        print("Timing:", timing)
+        print("Total residual:", total_residual)
+        print("Calculated opening PV:", opening)
+        print(
+            "PV difference:",
+            opening - target_net_investment,
+        )
+
         initial_net_investment = opening
         # Show the actual PV of payments separately from residuals.
         pv_lease_payments = self._money_decimal(
