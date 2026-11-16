@@ -237,8 +237,9 @@
       var token = (typeof getToken === "function" ? getToken() : null);
       if (token) headers["Authorization"] = "Bearer " + token;
 
-      var baseUrl = (typeof toApiUrl === "function" ? toApiUrl("") : "") ||
-                    window.API_BASE || "";
+      var baseUrl = (typeof window.toApiUrl === "function"
+          ? window.toApiUrl("")
+          : "") || window.API_BASE || "";
       var url = baseUrl +
         "/api/companies/" + cid + "/makro/remittance/upload";
 
