@@ -81297,12 +81297,6 @@ class DatabaseService:
                     2,
                 )
 
-                manufacturer_dealer = self._bool(
-                    lease.get("manufacturer_or_dealer_lessor")
-                    or lease.get("manufacturer_dealer")
-                )
-
-
                 if manufacturer_dealer:
                     gain_loss = round(
                         net_investment - carrying_amount,
@@ -81330,7 +81324,7 @@ class DatabaseService:
                     "Net investment less fair value:",
                     round(net_investment - fair_value, 2),
                 )
-                
+
                 if gain_loss > 0 and not gain_code:
                     raise ValueError(
                         "disposal_gain_account_code is required"

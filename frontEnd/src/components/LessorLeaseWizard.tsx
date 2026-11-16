@@ -1549,6 +1549,16 @@ useEffect(() => {
     setError(null);
     setStep(1);
 
+    // Reset IDC modal state so a stale directCostLeaseId from a
+    // previous lease does not leak into the next creation flow.
+    setShowDirectCostModal(false);
+    setShowPaidDirectCostForm(false);
+    setDirectCostLeaseId(null);
+    setDirectCostPaymentError(null);
+    setDirectCostPaymentReference("");
+    setDirectCostBankAccountId("");
+    setDirectCostPaymentSubmitting(false);
+
     setManufacturerDealerConfirmed(
       manufacturerDealerSuggested
     );
@@ -2172,13 +2182,15 @@ useEffect(() => {
     </div>
   );
 
-  if (createdLeaseId) {
-    
-  return (
-      <div
-          className="lease-wizard"
-          data-role="lessor"
-      >
+  // --- Success-screen render helper ---
+  // Previously this was an early `if (createdLeaseId) { return ... }`
+  // block. That early return bypassed the IDC modal markup at the
+  // bottom of the component, so the modal never rendered even when
+  // `setShowDirectCostModal(true)` had been called in handleCreate().
+  // Extracting the success screen into a function and rendering it
+  // conditionally inside the main return keeps the modal reachable
+  // from both the success path and the wizard-steps path.
+  const renderSuccessScreen = () => (
         <div className="lease-step lease-step-3">
           <h2>Lessor lease created and commenced</h2>
 
@@ -2241,9 +2253,7 @@ useEffect(() => {
             </button>
           </div>
         </div>
-      </div>
     );
-  }
 
   const renderStep3 = () => {
     const operatingPreview =
@@ -4169,11 +4179,23 @@ useEffect(() => {
       data-role="lessor"
       data-step={step}
     >
-      {step === 1 && renderStep1()}
-      {step === 2 && renderStep2()}
-      {step === 3 && renderStep3()}
+      {createdLeaseId ? (
+        renderSuccessScreen()
+      ) : (
+        <>
+          {step === 1 && renderStep1()}
+          {step === 2 && renderStep2()}
+          {step === 3 && renderStep3()}
+        </>
+      )}
 
       {/* --- IFRS 16 Lessor IDC capture modal --- */}
+      {/* Rendered outside the success/wizard conditional so it is
+          reachable from both branches. Previously this markup lived
+          only in the main return, which was bypassed by the
+          `if (createdLeaseId) return <success screen />` early return
+          above — so the modal never appeared after lease creation
+          even when setShowDirectCostModal(true) had been called. */}
       {showDirectCostModal && directCostLeaseId && (
         <div
           style={{
