@@ -1,4 +1,4 @@
-(function hardTraceRedirects() {
+﻿(function hardTraceRedirects() {
   const logState = (label, extra = {}) => {
     try {
       console.error(label, {
@@ -366,7 +366,7 @@ window.addEventListener("unhandledrejection", (e) => {
   window.toApiUrl = function toApiUrl(url) {
       if (!url) throw new Error("toApiUrl: url is missing");
 
-      if (/^https?:\/\/?/i.test(url)) return url;
+      if (/^https?:\/\//i.test(url)) return url;
 
       if (url.startsWith("/")) return API_BASE + url;
 
