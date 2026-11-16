@@ -30,7 +30,7 @@ import tempfile
 import traceback
 from dataclasses import asdict
 from flask import Blueprint, request, jsonify, current_app, g
-
+from BackEnd.Services.auth_middleware import require_auth
 from .posting_service import MakroPostingService, PostingResult
 
 makro_bp = Blueprint("makro_marketplace", __name__)
@@ -100,6 +100,7 @@ def _result_to_dict(result: PostingResult) -> dict:
     "/api/companies/<int:company_id>/makro/remittance/upload",
     methods=["POST", "OPTIONS"],
 )
+@require_auth
 def upload_makro_remittance(company_id: int):
     """Accept a remittance PDF/txt upload and process it.
 
@@ -116,7 +117,7 @@ def upload_makro_remittance(company_id: int):
     user = getattr(g, "current_user", {}) or {}
     if not user:
         return jsonify({"error": "Not authenticated"}), 401
-    if user.get("company_id") != company_id:
+    if int(user.get("company_id") or 0) != int(company_id):
         return jsonify({"error": "Not authorised for this company"}), 403
 
     # Get the uploaded file.
