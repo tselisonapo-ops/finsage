@@ -18412,6 +18412,40 @@ body{
             </div>
             <!-- ═══ END REMITTANCE IMPORT PANEL ═══ -->
 
+            <!-- Inline fallback: checkbox show/hide works even if makro_screen.js hasn't loaded yet -->
+            <script>
+            (function(){
+              function initRemittanceToggle(){
+                var toggle=document.getElementById('remittanceImportToggle');
+                var panel=document.getElementById('remittanceImportPanel');
+                var label=document.getElementById('remittanceImportToggleLabel');
+                if(!toggle||!panel) return false;
+                if(toggle.dataset.bound) return true;
+                toggle.dataset.bound='1';
+                toggle.addEventListener('change',function(){
+                  if(toggle.checked){
+                    panel.classList.remove('hidden');
+                    if(label){label.style.borderColor='rgba(0,200,200,0.5)';label.style.background='rgba(0,200,200,0.06)';label.style.color='#00284F';}
+                  }else{
+                    panel.classList.add('hidden');
+                    if(label){label.style.borderColor='rgba(15,23,42,.12)';label.style.background='#fff';label.style.color='#334155';}
+                  }
+                });
+                return true;
+              }
+              if(!initRemittanceToggle()){
+                // Retry when journal screen becomes active
+                var obs=new MutationObserver(function(){
+                  var s=document.getElementById('screen-journal');
+                  if(s&&s.classList.contains('active')){initRemittanceToggle();}
+                });
+                var host=document.getElementById('screensHost');
+                if(host)obs.observe(host,{subtree:true,attributes:true,attributeFilter:['class']});
+              }
+            })();
+            </script>
+            <!-- End inline fallback -->
+
             <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start w-full">
 
               <!-- ═══ LEFT COLUMN ═══ -->
@@ -40158,7 +40192,7 @@ body{
     loadScript("/js/data-migration.js");
 
     /* ═══ REMITTANCE IMPORT MODULE ═══ */
-    loadScript("/static/js/makro_screen.js?v=20261116");
+    loadScript("/makro_screen.js?v=20261116");
 </script>
 <!-- v3: demo inline PAYE validate bridge removed — the REAL engine is restored via /tax-filing-dashboard-integration.js?v=20260818a in the loader chain; it strips the inline onclick and binds the Validate button itself -->
 
