@@ -141,12 +141,25 @@ def upload_makro_remittance(company_id: int):
     try:
         # Extract text.
         if ext == ".pdf":
-            proc = subprocess.run(
-                ["pdftotext", "-layout", tmp_path, "-"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            try:
+                proc = subprocess.run(
+                    ["pdftotext", "-layout", tmp_path, "-"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+            except FileNotFoundError:
+                return jsonify({
+                    "error": "PDF processing is unavailable because pdftotext is not installed on the server.",
+                    "type": "missing_dependency",
+                    "dependency": "poppler-utils",
+                }), 500
+            except subprocess.TimeoutExpired:
+                return jsonify({
+                    "error": "PDF text extraction timed out. Please try a smaller PDF.",
+                    "type": "pdf_extraction_timeout",
+                }), 500
             if proc.returncode != 0:
                 return jsonify({
                     "error": "pdftotext failed to extract text from the PDF.",
