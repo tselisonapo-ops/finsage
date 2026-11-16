@@ -1,4 +1,4 @@
-﻿print("[BOOT] api_server.py import started")
+print("[BOOT] api_server.py import started")
 
 # ────────────────────────────────────────────────────────────────
 # Load environment FIRST (before ANY BackEnd.Services imports)
@@ -242,6 +242,10 @@ from BackEnd.Services.routes.ias41_disclosure_routes import (
 )
 from BackEnd.Services.routes.consolidation_routes import consolidation_bp
 from BackEnd.Services.routes.payroll_tax_filing_routes import payroll_tax_filing_bp
+
+# ═══ REMITTANCE IMPORT EXTENSION ═══
+from BackEnd.Services.makro_posting.blueprint import makro_bp
+
 from BackEnd.Services.control.auth import control_auth_bp
 from BackEnd.Services.control.customers import customers_bp 
 from BackEnd.Services.control.settings import settings_bp
@@ -758,6 +762,10 @@ app.register_blueprint(receipt_scan_bp)
 app.register_blueprint(entitlements_bp)
 app.register_blueprint(practice_bp)
 app.register_blueprint(subscriptions_bp)
+
+# ═══ REMITTANCE IMPORT EXTENSION ═══
+app.register_blueprint(makro_bp)
+
 register_practice(app, db_service)              # delegation uplift + client metering
 register_entitlement_gate(app, db_service)      # stash app.extensions["entitlements"]
 register_audit_ridealong(app, db_service)

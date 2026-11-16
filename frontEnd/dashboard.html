@@ -18204,6 +18204,214 @@ body{
               </div>
             </div>
 
+            <!-- ═══ REMITTANCE IMPORT PANEL (toggled by checkbox) ═══ -->
+            <!-- Remittance Import toggle -->
+            <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+              <label id="remittanceImportToggleLabel"
+                     style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;
+                            padding:8px 14px;border-radius:10px;background:#fff;
+                            border:1px solid rgba(15,23,42,.12);
+                            font-size:12px;font-weight:600;color:#334155;
+                            transition:all .15s ease;">
+                <input type="checkbox" id="remittanceImportToggle"
+                       style="width:16px;height:16px;accent-color:#00C8C8;cursor:pointer;">
+                Remittance Import
+              </label>
+            </div>
+
+            <!-- Remittance Import panel (hidden until checkbox is checked) -->
+            <div id="remittanceImportPanel" class="hidden space-y-4"
+                 style="margin-bottom:16px;">
+
+              <!-- Upload card -->
+              <div class="cc-card" style="--i:0">
+                <div class="cc-card-head">
+                  <div class="cc-card-title">
+                    <span class="cc-ico">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                           stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                      </svg>
+                    </span>
+                    <div class="cc-title-text">
+                      <h3>Upload remittance advice</h3>
+                      <p>Drop a remittance PDF here, or click to browse.</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button id="remitPreviewBtn" class="cc-btn" disabled>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                           stroke-linejoin="round">
+                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                      </svg>
+                      Preview journals
+                    </button>
+                    <button id="remitPostBtn" class="cc-btn cc-btn--solid" disabled>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                           stroke-linejoin="round">
+                        <path d="M5 12h14"/><path d="M12 5v14"/>
+                      </svg>
+                      Post journals
+                    </button>
+                  </div>
+                </div>
+
+                <div class="cc-card-body">
+                  <div id="remitDropZone"
+                       class="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors"
+                       style="border-color:#cbd5e1;">
+                    <input type="file" id="remitFileInput"
+                           accept=".pdf,.txt" class="hidden">
+                    <div id="remitDropIcon" class="text-4xl mb-2">📄</div>
+                    <p id="remitDropLabel" class="text-sm text-slate-600">
+                      Drop remittance PDF here or click to browse
+                    </p>
+                    <p class="text-xs text-slate-400 mt-1">
+                      Accepted: .pdf, .txt — Max size: 10 MB
+                    </p>
+                  </div>
+
+                  <div id="remitErrorBanner" class="hidden mt-4 p-3 rounded-lg"
+                       style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;">
+                    <span id="remitErrorText"></span>
+                  </div>
+
+                  <div id="remitLoading" class="hidden mt-4 flex items-center gap-3">
+                    <div class="w-5 h-5 border-2 rounded-full animate-spin"
+                         style="border-color:#00C8C8;border-top-color:transparent;"></div>
+                    <span id="remitLoadingText" class="text-sm text-slate-600">
+                      Processing remittance...
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Preview card -->
+              <div id="remitPreviewCard" class="cc-card hidden" style="--i:1">
+                <div class="cc-card-head">
+                  <div class="cc-card-title">
+                    <span class="cc-ico cc-ico--teal">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                           stroke-linejoin="round">
+                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                      </svg>
+                    </span>
+                    <div class="cc-title-text">
+                      <h3>Remittance preview</h3>
+                      <p id="remitPreviewSubtitle">Parsed header and totals.</p>
+                    </div>
+                  </div>
+                  <span id="remitReconBadge" class="ckp-pill"></span>
+                </div>
+
+                <div class="cc-card-body">
+                  <div id="remitHeaderGrid"
+                       class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  </div>
+
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    <div class="cc-mini">
+                      <div class="cc-mini-head">Total Sales (GMV)</div>
+                      <div class="cc-mini-body">
+                        <strong id="remitTotalSales" class="text-lg">—</strong>
+                      </div>
+                    </div>
+                    <div class="cc-mini">
+                      <div class="cc-mini-head">Commission</div>
+                      <div class="cc-mini-body">
+                        <strong id="remitTotalCommission" class="text-lg" style="color:#b45309;">—</strong>
+                      </div>
+                    </div>
+                    <div class="cc-mini">
+                      <div class="cc-mini-head">Transport</div>
+                      <div class="cc-mini-body">
+                        <strong id="remitTotalTransport" class="text-lg" style="color:#b45309;">—</strong>
+                      </div>
+                    </div>
+                    <div class="cc-mini" style="background:#ecfdf5;border-color:#a7f3d0;">
+                      <div class="cc-mini-head" style="color:#047857;">Net Payment</div>
+                      <div class="cc-mini-body">
+                        <strong id="remitTotalNet" class="text-xl" style="color:#047857;">—</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    <div class="cc-kv"><span>Sales lines</span><span class="cc-kv-val" id="remitSalesCount">—</span></div>
+                    <div class="cc-kv"><span>Return lines</span><span class="cc-kv-val" id="remitReturnCount">—</span></div>
+                    <div class="cc-kv"><span>Journals generated</span><span class="cc-kv-val" id="remitJournalCount">—</span></div>
+                    <div class="cc-kv"><span>Cross-check drift</span><span class="cc-kv-val" id="remitDrift">—</span></div>
+                  </div>
+
+                  <div id="remitSampleJournals" class="space-y-3"></div>
+                </div>
+              </div>
+
+              <!-- Results card -->
+              <div id="remitResultsCard" class="cc-card hidden" style="--i:2">
+                <div class="cc-card-head">
+                  <div class="cc-card-title">
+                    <span class="cc-ico">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                           stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                      </svg>
+                    </span>
+                    <div class="cc-title-text">
+                      <h3>Posting results</h3>
+                      <p id="remitResultsSubtitle">—</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="cc-card-body">
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    <div class="cc-kpi cc-kpi--np">
+                      <div class="cc-kpi-top"><span class="cc-kpi-label">Posted</span></div>
+                      <div class="cc-kpi-value" id="remitPostedCount">—</div>
+                    </div>
+                    <div class="cc-kpi cc-kpi--ap">
+                      <div class="cc-kpi-top"><span class="cc-kpi-label">Failed</span></div>
+                      <div class="cc-kpi-value" id="remitFailedCount">—</div>
+                    </div>
+                    <div class="cc-kpi cc-kpi--cash">
+                      <div class="cc-kpi-top"><span class="cc-kpi-label">AR Control Balance</span></div>
+                      <div class="cc-kpi-value" id="remitArBalance">—</div>
+                    </div>
+                    <div class="cc-kpi cc-kpi--vat">
+                      <div class="cc-kpi-top"><span class="cc-kpi-label">Net Payment</span></div>
+                      <div class="cc-kpi-value" id="remitNetPayment">—</div>
+                    </div>
+                  </div>
+
+                  <div id="remitFailedDetails" class="hidden">
+                    <div class="cc-kpi-label mb-2" style="color:#b91c1c;">Failed journals</div>
+                    <div id="remitFailedList" class="space-y-2"></div>
+                  </div>
+
+                  <div id="remitSuccessMsg" class="hidden p-4 rounded-lg"
+                       style="background:#ecfdf5;border:1px solid #a7f3d0;">
+                    <span style="color:#047857;font-weight:700;">
+                      All journals posted successfully. AR control clears to zero.
+                    </span>
+                    <p id="remitSuccessSummary" class="text-sm mt-2" style="color:#065f46;"></p>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+            <!-- ═══ END REMITTANCE IMPORT PANEL ═══ -->
+
             <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start w-full">
 
               <!-- ═══ LEFT COLUMN ═══ -->
@@ -39948,6 +40156,9 @@ body{
     loadScript("/ias41.js");
     
     loadScript("/js/data-migration.js");
+
+    /* ═══ REMITTANCE IMPORT MODULE ═══ */
+    loadScript("/static/js/makro_screen.js?v=20261116");
 </script>
 <!-- v3: demo inline PAYE validate bridge removed — the REAL engine is restored via /tax-filing-dashboard-integration.js?v=20260818a in the loader chain; it strips the inline onclick and binds the Validate button itself -->
 
