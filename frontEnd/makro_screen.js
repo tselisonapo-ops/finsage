@@ -366,8 +366,8 @@
         var dr = ln.debit ? fmtR(ln.debit) : "";
         var cr = ln.credit ? fmtR(ln.credit) : "";
         return '<tr>' +
-          '<td style="font-family:monospace;font-size:11px;padding:2px 8px;">' +
-          (ln.account_code || "") + '</td>' +
+          '<td style="font-size:11px;padding:2px 8px;">' +
+          (ln.account_name || "Account name unavailable") + '</td>' +
           '<td style="text:right;padding:2px 8px;font-variant-numeric:tabular-nums;">' +
           dr + '</td>' +
           '<td style="text:right;padding:2px 8px;font-variant-numeric:tabular-nums;">' +

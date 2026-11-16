@@ -38,8 +38,12 @@ makro_bp = Blueprint("makro_marketplace", __name__)
 ALLOWED_EXTS = {".pdf", ".txt"}
 
 
-def _result_to_dict(result: PostingResult) -> dict:
+def _result_to_dict(
+    result: PostingResult,
+    account_names: dict | None = None,
+) -> dict:
     """Convert PostingResult to a JSON-serializable dict."""
+    account_names = account_names or {}
     posted = []
     for pj in result.posted_journals:
         d = {
@@ -55,7 +59,10 @@ def _result_to_dict(result: PostingResult) -> dict:
         # Include the entry payload for dry-run previews so the
         # frontend can show journal lines.
         if pj.entry:
-            d["entry"] = pj.entry
+            d["entry"] = _entry_with_account_names(
+                pj.entry,
+                account_names,
+            )
         posted.append(d)
 
     failed = []
@@ -69,7 +76,10 @@ def _result_to_dict(result: PostingResult) -> dict:
             "journal_id": fj.journal_id,
             "status": fj.status,
             "error": fj.error,
-            "entry": fj.entry,
+            "entry": _entry_with_account_names(
+                fj.entry,
+                account_names,
+            ),
         })
 
     return {
@@ -94,6 +104,48 @@ def _result_to_dict(result: PostingResult) -> dict:
         "idempotency_hash": result.idempotency_hash,
         "summary": result.summary(),
     }
+
+
+def _get_coa_account_names(db, company_id: int) -> dict:
+    """Read account names for this company without changing its COA."""
+    schema = db.company_schema(int(company_id))
+
+    rows = db.fetch_all(
+        f"""
+        SELECT code, name
+        FROM {schema}.coa
+        WHERE company_id = %s
+        """,
+        (int(company_id),),
+    ) or []
+
+    return {
+        str(row["code"]): str(row["name"])
+        for row in rows
+        if row.get("code") and row.get("name")
+    }
+
+
+def _entry_with_account_names(entry, account_names: dict):
+    """Copy an entry and add account names to its journal lines."""
+    if not isinstance(entry, dict):
+        return entry
+
+    enriched_entry = dict(entry)
+    lines = entry.get("lines") or []
+
+    enriched_entry["lines"] = [
+        {
+            **line,
+            "account_name": account_names.get(
+                str(line.get("account_code") or ""),
+                "Account name unavailable",
+            ),
+        }
+        for line in lines
+    ]
+
+    return enriched_entry
 
 
 @makro_bp.route(
@@ -185,7 +237,11 @@ def upload_makro_remittance(company_id: int):
         )
 
         result = service.post_remittance_text(text, dry_run=dry_run)
-        return jsonify(_result_to_dict(result)), 200 if result.ok else 500
+        account_names = _get_coa_account_names(db, company_id)
+
+        return jsonify(
+            _result_to_dict(result, account_names=account_names)
+        ), 200 if result.ok else 500
 
     except ValueError as e:
         # Parser / validation errors.
