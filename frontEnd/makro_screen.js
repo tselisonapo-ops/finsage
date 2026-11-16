@@ -233,28 +233,17 @@
     formData.append("dry_run", dryRun ? "true" : "false");
 
     try {
-      var headers = {};
-      var token = (typeof getToken === "function" ? getToken() : null);
-      if (token) headers["Authorization"] = "Bearer " + token;
+      var url = "/api/companies/" + cid + "/makro/remittance/upload";
 
-      var baseUrl = window.API_BASE || "";
-          
-      var url = baseUrl +
-        "/api/companies/" + cid + "/makro/remittance/upload";
+      if (typeof window.apiFetch !== "function") {
+        throw new Error("FinSage API client (window.apiFetch) is unavailable.");
+      }
 
-      var res = await fetch(url, {
+      var data = await window.apiFetch(url, {
         method: "POST",
         body: formData,
-        headers: headers,
-        credentials: "include",
+        credentials: "include"
       });
-
-      var data = await res.json();
-
-      if (!res.ok) {
-        showError(data.error || ("HTTP " + res.status));
-        return;
-      }
 
       renderPreview(data);
 
@@ -264,8 +253,13 @@
         var postBtn = $("remitPostBtn");
         if (postBtn && data.ok) postBtn.disabled = false;
       }
+
     } catch (err) {
-      showError(err.message || "Network error while contacting the server.");
+      console.error("[MAKRO REMITTANCE ERROR]", err);
+      showError(
+        (err && err.message) ||
+        "Network error while contacting the server."
+      );
     } finally {
       setLoading(null);
     }
