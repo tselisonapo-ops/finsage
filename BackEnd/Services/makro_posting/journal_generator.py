@@ -94,7 +94,7 @@ class MakroJournalGenerator:
             description=description,
             currency=self.currency,
             source="makro_marketplace",
-            source_id=f"BANK-{header.payment_reference_no}",
+            source_id=int(header.payment_reference_no),
             lines=[
                 JournalLine(
                     account_code=self.m.cash_bank,
@@ -247,7 +247,7 @@ class MakroJournalGenerator:
             currency=self.currency,
             lines=lines,
             source="makro_marketplace",
-            source_id=line.order_id,
+            source_id=int(header.payment_reference_no),
         )
 
     # ------------------------------------------------------- return journal
@@ -376,7 +376,7 @@ class MakroJournalGenerator:
             currency=self.currency,
             lines=lines,
             source="makro_marketplace",
-            source_id=line.order_id,
+            source_id=int(header.payment_reference_no),
         )
 
     # ------------------------------------------------------------- helpers

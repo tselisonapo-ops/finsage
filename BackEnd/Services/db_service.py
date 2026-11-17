@@ -42367,22 +42367,28 @@ class DatabaseService:
         ALTER COLUMN currency SET NOT NULL;
 
         -- ==================================================
-        -- Uniqueness: block duplicate journal creation per source+source_id
+        -- Uniqueness: prevent duplicate journal creation
         -- ==================================================
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname='{schema}' AND indexname='uq_journal_source_company'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX uq_journal_source_company
-            ON %I.journal(company_id, source, source_id)
-            WHERE source IS NOT NULL AND source_id IS NOT NULL',
-            '{schema}'
-            );
-        END IF;
-        END $$;
+
+        -- All existing journal sources retain strict uniqueness.
+        -- Makro is excluded because one remittance payment reference
+        -- can legitimately generate multiple journals.
+        DROP INDEX IF EXISTS {schema}.uq_journal_source_company;
+
+        CREATE UNIQUE INDEX uq_journal_source_company
+        ON {schema}.journal(company_id, source, source_id)
+        WHERE source IS NOT NULL
+          AND source_id IS NOT NULL
+          AND source <> 'makro_marketplace';
+
+        -- Makro: allow multiple journals under one payment reference,
+        -- but prevent duplicate journals for the same reference/order.
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_journal_makro_source_company
+        ON {schema}.journal(company_id, source, source_id, ref)
+        WHERE source = 'makro_marketplace'
+          AND source_id IS NOT NULL
+          AND ref IS NOT NULL;
+
 
         -- ==================================================
         -- JOURNAL reversal FKs (self references)
