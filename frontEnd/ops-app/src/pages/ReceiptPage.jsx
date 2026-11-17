@@ -3,10 +3,10 @@ import {
   AlertTriangle,ArrowLeft,Box,
   Check,CheckCircle2,FileCheck2,
   PackageCheck,Save,Send,ShieldCheck,
-  Wrench,X
+  Wrench,X,ExternalLink,Lock
 } from "lucide-react";
 import {useNavigate,useParams} from "react-router-dom";
-import {getCompanyId,opsApi} from "../api/api";
+import {getCompanyId,getFinSageAppUrl,opsApi} from "../api/api";
 import Shell from "../components/Shell";
 
 export default function ReceiptPage(){
@@ -23,6 +23,7 @@ export default function ReceiptPage(){
 
   const [verifyComment,setVerifyComment]=useState("");
   const [rejectReason,setRejectReason]=useState("");
+  const [canAccessAccounting,setCanAccessAccounting]=useState(false);
 
   async function load(){
     const [ctx,receiptData]=await Promise.all([
@@ -35,6 +36,13 @@ export default function ReceiptPage(){
 
     setSession(ctx);
     setData(receiptData);
+
+    try {
+      const acctStatus = await opsApi.checkAccountingStatus(companyId);
+      setCanAccessAccounting(Boolean(acctStatus?.can_access_accounting));
+    } catch {
+      setCanAccessAccounting(false);
+    }
   }
 
   useEffect(()=>{
@@ -91,6 +99,56 @@ export default function ReceiptPage(){
         [key]:value
       }
     }));
+  }
+
+  function setAsset(poLineId, key, value){
+    setData(x => {
+      const existing = x.asset_receipts || [];
+      const idx = existing.findIndex(a => a.purchase_order_line_id === poLineId);
+      let updated;
+      if (idx >= 0) {
+        updated = existing.map((a, i) => i === idx ? { ...a, [key]: value } : a);
+      } else {
+        updated = [...existing, { purchase_order_line_id: poLineId, [key]: value }];
+      }
+      return { ...x, asset_receipts: updated };
+    });
+  }
+
+  function handoffAssetToFinSage(line) {
+    if (!canAccessAccounting) {
+      alert("Access Restricted: Only accountants and administrators with FinSage ERP access can hand off assets to FinSage.");
+      return;
+    }
+    const poLineId = line.po_line_id || line.id;
+    const url = new URL(getFinSageAppUrl());
+    url.searchParams.set("screen", "fixedassets");
+    url.searchParams.set("action", "acquire_asset");
+    url.searchParams.set("receipt_id", String(receipt.id));
+    url.searchParams.set("po_line_id", String(poLineId));
+    url.searchParams.set("company_id", String(companyId));
+    window.location.href = url.toString();
+  }
+
+  function handoffLeaseToFinSage() {
+    if (!canAccessAccounting) {
+      alert("Access Restricted: Only accountants and administrators with FinSage ERP access can hand off leases to FinSage.");
+      return;
+    }
+    const perspective = (data?.lease_receipt?.lease_perspective || "lessee").toLowerCase();
+    const url = new URL(getFinSageAppUrl());
+    if (perspective === "lessor") {
+      url.searchParams.set("screen", "lessor-subsequent");
+      url.searchParams.set("action", "lessor_lease");
+      url.searchParams.set("lease_role", "lessor");
+    } else {
+      url.searchParams.set("screen", "leases");
+      url.searchParams.set("action", "lease_wizard");
+      url.searchParams.set("lease_role", "lessee");
+    }
+    url.searchParams.set("receipt_id", String(receipt.id));
+    url.searchParams.set("company_id", String(companyId));
+    window.location.href = url.toString();
   }
 
   async function save(){
@@ -166,12 +224,31 @@ export default function ReceiptPage(){
       }
 
       if(
+        receipt.receipt_type==="asset"
+      ){
+        const assetList = data.asset_receipts || [];
+        for (const line of lines) {
+          const poLineId = line.po_line_id || line.id;
+          const assetInfo = assetList.find(a => a.purchase_order_line_id === poLineId) || {};
+          await opsApi.saveAssetReceipt(
+            companyId,
+            receipt.id,
+            poLineId,
+            assetInfo
+          );
+        }
+      }
+
+      if(
         receipt.receipt_type==="lease"
       ){
         await opsApi.saveLeaseReceipt(
           companyId,
           receipt.id,
-          data.lease_receipt||{}
+          {
+            ...(data.lease_receipt||{}),
+            lease_perspective: data.lease_receipt?.lease_perspective || "lessee",
+          }
         );
       }
 
@@ -581,6 +658,106 @@ export default function ReceiptPage(){
                   </div>
                 ))}
               </div>
+
+              {receipt.receipt_type==="asset"&&(
+                <div style={{marginTop:"20px",borderTop:"1px solid #e2e8f0",paddingTop:"16px"}}>
+                  <h4 style={{fontSize:"14px",fontWeight:600,color:"#0f172a",marginBottom:"12px"}}>
+                    Fixed Asset Capitalisation & Tagging
+                  </h4>
+                  {lines.map((line)=>{
+                    const poLineId = line.po_line_id || line.id;
+                    const asset = (data.asset_receipts||[]).find(a=>a.purchase_order_line_id===poLineId)||{};
+                    return (
+                      <div key={`asset-${poLineId}`} style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:"10px",padding:"14px",marginBottom:"12px"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
+                          <strong>{line.description}</strong>
+                          <span style={{fontSize:"12px",color:"#64748b"}}>Ordered: {line.ordered_quantity} | Accepted: {line.accepted_quantity}</span>
+                        </div>
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr))",gap:"10px",marginBottom:"10px"}}>
+                          <div>
+                            <label style={{fontSize:"11px",color:"#475569",display:"block",marginBottom:"4px"}}>Asset Tag</label>
+                            <input
+                              type="text"
+                              disabled={!editable}
+                              placeholder="e.g. AST-001"
+                              value={asset.asset_tag||""}
+                              onChange={e=>setAsset(poLineId,"asset_tag",e.target.value)}
+                              style={{width:"100%",padding:"6px 10px",fontSize:"12px",borderRadius:"6px",border:"1px solid #cbd5e1"}}
+                            />
+                          </div>
+                          <div>
+                            <label style={{fontSize:"11px",color:"#475569",display:"block",marginBottom:"4px"}}>Serial Number</label>
+                            <input
+                              type="text"
+                              disabled={!editable}
+                              placeholder="e.g. SN-98765432"
+                              value={asset.serial_number||""}
+                              onChange={e=>setAsset(poLineId,"serial_number",e.target.value)}
+                              style={{width:"100%",padding:"6px 10px",fontSize:"12px",borderRadius:"6px",border:"1px solid #cbd5e1"}}
+                            />
+                          </div>
+                          <div>
+                            <label style={{fontSize:"11px",color:"#475569",display:"block",marginBottom:"4px"}}>Category</label>
+                            <input
+                              type="text"
+                              disabled={!editable}
+                              placeholder="e.g. Plant & Machinery"
+                              value={asset.category||""}
+                              onChange={e=>setAsset(poLineId,"category",e.target.value)}
+                              style={{width:"100%",padding:"6px 10px",fontSize:"12px",borderRadius:"6px",border:"1px solid #cbd5e1"}}
+                            />
+                          </div>
+                          <div>
+                            <label style={{fontSize:"11px",color:"#475569",display:"block",marginBottom:"4px"}}>Location</label>
+                            <input
+                              type="text"
+                              disabled={!editable}
+                              placeholder="e.g. Site Office"
+                              value={asset.location_text||""}
+                              onChange={e=>setAsset(poLineId,"location_text",e.target.value)}
+                              style={{width:"100%",padding:"6px 10px",fontSize:"12px",borderRadius:"6px",border:"1px solid #cbd5e1"}}
+                            />
+                          </div>
+                          <div>
+                            <label style={{fontSize:"11px",color:"#475569",display:"block",marginBottom:"4px"}}>Placed in Service Date</label>
+                            <input
+                              type="date"
+                              disabled={!editable}
+                              value={asset.placed_in_service_date||receipt.receipt_date||""}
+                              onChange={e=>setAsset(poLineId,"placed_in_service_date",e.target.value)}
+                              style={{width:"100%",padding:"6px 10px",fontSize:"12px",borderRadius:"6px",border:"1px solid #cbd5e1"}}
+                            />
+                          </div>
+                        </div>
+
+                        {receipt.status==="verified"&&(
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:"8px",borderTop:"1px dashed #cbd5e1"}}>
+                            <span style={{fontSize:"12px",color:"#64748b"}}>
+                              Handoff Status: <strong style={{color: asset.handoff_status==="completed"?"#059669":"#0284c7"}}>{asset.handoff_status||"Ready for FinSage"}</strong>
+                            </span>
+                            {canAccessAccounting ? (
+                              <button
+                                type="button"
+                                className="primary-btn"
+                                onClick={()=>handoffAssetToFinSage(line)}
+                                style={{fontSize:"12px",padding:"6px 12px",display:"inline-flex",alignItems:"center",gap:"6px"}}
+                              >
+                                <ExternalLink size={13}/>
+                                Open in FinSage Fixed Assets Drawer →
+                              </button>
+                            ) : (
+                              <div style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"4px 10px",background:"#fef3c7",color:"#92400e",borderRadius:"6px",fontSize:"11px",fontWeight:600}}>
+                                <Lock size={12}/>
+                                Accountants & Super Admins only
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
           )}
 
@@ -790,7 +967,60 @@ export default function ReceiptPage(){
                     }
                   />
                 </div>
+
+                <div>
+                  <label>
+                    Lease perspective
+                  </label>
+
+                  <select
+                    disabled={!editable}
+                    value={
+                      data.lease_receipt?.lease_perspective || "lessee"
+                    }
+                    onChange={e=>
+                      setLease(
+                        "lease_perspective",
+                        e.target.value
+                      )
+                    }
+                  >
+                    <option value="lessee">Lessee (Right-of-Use Asset / Liability)</option>
+                    <option value="lessor">Lessor (Subsequent Measurement / Receivable)</option>
+                  </select>
+                </div>
               </div>
+
+              {receipt.status==="verified"&&(
+                <div style={{marginTop:"16px",padding:"16px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:"12px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
+                    <FileCheck2 size={18} color="#00C8C8"/>
+                    <strong style={{fontSize:"14px",color:"#0f172a"}}>FinSage IFRS 16 Accounting Hand-over</strong>
+                  </div>
+                  <p style={{fontSize:"12px",color:"#64748b",marginBottom:"12px"}}>
+                    Perspective: <strong>{data.lease_receipt?.lease_perspective === "lessor" ? "Lessor Accounting" : "Lessee Accounting (IFRS 16)"}</strong>.
+                    Move to FinSage ERP to initiate lease schedule calculation and general ledger recognition.
+                  </p>
+                  {canAccessAccounting ? (
+                    <button
+                      type="button"
+                      className="primary-btn"
+                      onClick={handoffLeaseToFinSage}
+                      style={{display:"inline-flex",alignItems:"center",gap:"8px"}}
+                    >
+                      <ExternalLink size={15}/>
+                      {data.lease_receipt?.lease_perspective === "lessor"
+                        ? "Open in FinSage Lessor Measurement →"
+                        : "Open in FinSage IFRS 16 Lessee Lease Wizard →"}
+                    </button>
+                  ) : (
+                    <div style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"8px 12px",background:"#fef3c7",color:"#92400e",borderRadius:"8px",fontSize:"12px",fontWeight:600}}>
+                      <Lock size={14}/>
+                      Restricted to FinSage Accountants and Super Admins
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
           )}
 
@@ -919,6 +1149,51 @@ export default function ReceiptPage(){
                     This PO can now participate in supplier invoice matching.
                   </span>
                 </div>
+              </div>
+            )}
+
+            {receipt.status==="verified" && ["asset", "lease"].includes(receipt.receipt_type) && (
+              <div style={{marginTop:"16px",padding:"14px",background:"#fff",border:"1px solid #e2e8f0",borderRadius:"12px",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px"}}>
+                  <PackageCheck size={18} color="#00C8C8"/>
+                  <strong style={{fontSize:"13px",color:"#0f172a"}}>FinSage ERP Hand-over</strong>
+                </div>
+
+                <p style={{fontSize:"12px",color:"#64748b",marginBottom:"12px"}}>
+                  {receipt.receipt_type === "asset"
+                    ? "Capitalise verified line items directly into the FinSage Fixed Asset Register."
+                    : `Handoff lease contract to FinSage (${data.lease_receipt?.lease_perspective === "lessor" ? "Lessor" : "Lessee IFRS 16"}).`}
+                </p>
+
+                {canAccessAccounting ? (
+                  receipt.receipt_type === "asset" ? (
+                    <button
+                      type="button"
+                      className="primary-btn receipt-full-btn"
+                      onClick={() => handoffAssetToFinSage(lines[0] || {})}
+                      disabled={!lines.length}
+                    >
+                      <ExternalLink size={15}/>
+                      Open Fixed Assets Drawer
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="primary-btn receipt-full-btn"
+                      onClick={handoffLeaseToFinSage}
+                    >
+                      <ExternalLink size={15}/>
+                      {data.lease_receipt?.lease_perspective === "lessor"
+                        ? "Open Lessor Measurement"
+                        : "Open IFRS 16 Lease Wizard"}
+                    </button>
+                  )
+                ) : (
+                  <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 10px",background:"#fef3c7",color:"#92400e",borderRadius:"8px",fontSize:"11px",fontWeight:600}}>
+                    <Lock size={14}/>
+                    <span>Accounting Hand-over Restricted (Accountants & Admins only)</span>
+                  </div>
+                )}
               </div>
             )}
 

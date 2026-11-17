@@ -23,6 +23,7 @@ import {
   WalletCards,
   Warehouse,
   ArrowLeftRight,
+  MessageSquare,
 } from "lucide-react";
 
 import { useState } from "react";
@@ -79,6 +80,7 @@ export default function Shell({
     ["requests", FileText, "Requests", "/requests"],
     ["approvals", CheckSquare, "Approvals", "/approvals"],
     ["procurement", ShoppingCart, "Procurement", "/procurement"],
+    ["inquiries", MessageSquare, "Inquiries", "/inquiries"],
     ["budget", WalletCards, "Budget control", "/budget"],
     ["organisation", Building2, "Organisation", "/organisation"],
     ["governance", ShieldCheck, "Governance", "/governance"],

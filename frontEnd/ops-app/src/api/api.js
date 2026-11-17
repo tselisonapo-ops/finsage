@@ -27,6 +27,13 @@ export function clearSession() {
   localStorage.removeItem(COMPANY_KEY);
 }
 
+export function getFinSageAppUrl() {
+  const configured = (import.meta.env.VITE_FINSAGE_APP_URL || "").trim();
+  if (configured) return configured;
+  const local = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  return local ? "http://127.0.0.1:5000/dashboard.html" : `${window.location.origin}/app/dashboard.html`;
+}
+
 // ============================================================
 // CORE HTTP CLIENT
 // ============================================================
@@ -1251,5 +1258,68 @@ export const opsApi = {
 
   inventoryCategories: (companyId) =>
     request(`${base(companyId)}/inventory/categories`),
+
+  // ============================================================
+  // PHASE 7: ACCOUNTING HAND-OVER & RBAC
+  // ============================================================
+
+  checkAccountingStatus: (companyId) =>
+    request(`${base(companyId)}/auth/accounting-status`),
+
+  assetHandoffPayload: (companyId, receiptId, poLineId) =>
+    request(
+      `${base(companyId)}/receipts/${encodeURIComponent(receiptId)}/asset-handoff/${encodeURIComponent(poLineId)}`
+    ),
+
+  completeAssetHandoff: (companyId, receiptId, poLineId, payload = {}) =>
+    request(
+      `${base(companyId)}/receipts/${encodeURIComponent(receiptId)}/asset-handoff/${encodeURIComponent(poLineId)}`,
+      {
+        method: "POST",
+        body: payload,
+      }
+    ),
+
+  leaseHandoffPayload: (companyId, receiptId) =>
+    request(
+      `${base(companyId)}/receipts/${encodeURIComponent(receiptId)}/lease-handoff`
+    ),
+
+  completeLeaseHandoff: (companyId, receiptId, payload = {}) =>
+    request(
+      `${base(companyId)}/receipts/${encodeURIComponent(receiptId)}/lease-handoff`,
+      {
+        method: "POST",
+        body: payload,
+      }
+    ),
+
+  // ── Stage 2: Inquiry & Quote ─────────────────────────────────
+
+  createInquiry: (companyId, payload) =>
+    request(`${base(companyId)}/inquiries`, { method: "POST", body: payload }),
+
+  listInquiries: (companyId, { type, status } = {}) => {
+    const params = new URLSearchParams();
+    if (type) params.set("type", type);
+    if (status) params.set("status", status);
+    const qs = params.toString();
+    return request(`${base(companyId)}/inquiries${qs ? "?" + qs : ""}`);
+  },
+
+  getInquiry: (companyId, inquiryId) =>
+    request(`${base(companyId)}/inquiries/${encodeURIComponent(inquiryId)}`),
+
+  requestInquiryQuote: (companyId, inquiryId, payload) =>
+    request(
+      `${base(companyId)}/inquiries/${encodeURIComponent(inquiryId)}/request-quote`,
+      { method: "POST", body: payload }
+    ),
+
+  closeInquiry: (companyId, inquiryId, payload) =>
+    request(
+      `${base(companyId)}/inquiries/${encodeURIComponent(inquiryId)}/close`,
+      { method: "POST", body: payload }
+    ),
 
 };

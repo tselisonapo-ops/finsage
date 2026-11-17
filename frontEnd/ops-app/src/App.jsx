@@ -32,6 +32,9 @@ import ProcurementDashboardPage from "./pages/ProcurementDashboardPage";
 import VendorInvoicePage from "./pages/VendorInvoicePage";
 import PayablesQueuePage from "./pages/PayablesQueuePage";
 
+import InquiriesPage from "./pages/InquiriesPage";
+import InquiryDetailPage from "./pages/InquiryDetailPage";
+
 import FinanceOverviewPage from "./pages/FinanceOverviewPage";
 import FinanceMyWorkPage from "./pages/FinanceMyWorkPage";
 import PaymentVoucherPage from "./pages/PaymentVoucherPage";
@@ -90,6 +93,10 @@ export default function App(){
         <Route path="/procurement/dashboard" element={<Protected><ProcurementDashboardPage/></Protected>}/>
 
         <Route path="/accounts-payable/invoices/:invoiceId" element={<Protected><VendorInvoicePage/></Protected>}/>
+
+        {/* ── Phase 7 Stage 2: Inquiries ── */}
+        <Route path="/inquiries" element={<Protected><InquiriesPage/></Protected>}/>
+        <Route path="/inquiries/:inquiryId" element={<Protected><InquiryDetailPage/></Protected>}/>
 
         <Route path="/finance" element={<Protected><FinanceOverviewPage/></Protected>}/>
         <Route path="/finance/my-work" element={<Protected><FinanceMyWorkPage/></Protected>}/>

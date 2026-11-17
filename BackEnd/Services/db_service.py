@@ -236073,6 +236073,58 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return [r["code"] for r in rows]
 
+    def user_has_finsage_accounting_access(self, company_id: int, user_id: int) -> bool:
+        company_id = int(company_id)
+        user_id = int(user_id)
+        schema = self.company_schema(company_id)
+
+        # 1. Company owner has full accounting access
+        company = self.fetch_one("SELECT owner_user_id FROM public.companies WHERE id=%s LIMIT 1;", (company_id,))
+        if company and int(company.get("owner_user_id") or 0) == user_id:
+            return True
+
+        # 2. Check company_users ERP role
+        cu = self.fetch_one(
+            """
+            SELECT role, is_active, product_access
+            FROM public.company_users
+            WHERE company_id=%s AND user_id=%s AND is_active=TRUE
+            LIMIT 1;
+            """,
+            (company_id, user_id),
+        )
+        if cu:
+            role = str(cu.get("role") or "").strip().lower()
+            accounting_roles = {
+                "owner", "super_admin", "admin", "cfo", "accountant",
+                "finance_manager", "director", "partner", "engagement_partner",
+                "audit_partner", "manager", "senior", "bookkeeper"
+            }
+            if role in accounting_roles:
+                return True
+
+        # 3. Check ops_roles
+        try:
+            ops_user = self.fetch_one(
+                f"""
+                SELECT r.code
+                FROM public.company_users cu
+                JOIN {schema}.ops_user_roles ur ON ur.company_user_id=cu.id AND ur.is_active=TRUE
+                JOIN {schema}.ops_roles r ON r.id=ur.role_id
+                WHERE cu.company_id=%s AND cu.user_id=%s
+                LIMIT 1;
+                """,
+                (company_id, user_id),
+            )
+            if ops_user:
+                code = str(ops_user.get("code") or "").upper()
+                if code in {"OWNER", "ADMIN", "CFO", "FINANCE_MANAGER", "ACCOUNTANT"}:
+                    return True
+        except Exception:
+            pass
+
+        return False
+
     def user_has_ops_access(self, company_id:int, user_id:int)->bool:
         company_id=int(company_id)
         user_id=int(user_id)
@@ -251456,10 +251508,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 underlying_asset,
                 location_text,
                 contract_reference,
+                lease_perspective,
                 handoff_status
             )
             VALUES(
-                %s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,%s,
                 'ready'
             )
 
@@ -251473,6 +251526,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     EXCLUDED.location_text,
                 contract_reference=
                     EXCLUDED.contract_reference,
+                lease_perspective=
+                    EXCLUDED.lease_perspective,
                 handoff_status='ready'
 
             RETURNING *;
@@ -251500,7 +251555,145 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     )
                     or ""
                 ).strip() or None,
+                (payload.get("lease_perspective") or "lessee").strip().lower(),
             ),
+        )
+
+    def get_ops_asset_handoff_payload(self, company_id: int, receipt_id: int, purchase_order_line_id: int) -> dict:
+        company_id = int(company_id)
+        receipt_id = int(receipt_id)
+        purchase_order_line_id = int(purchase_order_line_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            SELECT 
+                ar.*,
+                r.receipt_number,
+                r.receipt_date,
+                r.status as receipt_status,
+                pol.description as po_line_description,
+                pol.unit_price,
+                pol.line_total,
+                po.po_no,
+                po.currency,
+                v.name as vendor_name,
+                v.id as vendor_id
+            FROM {schema}.ops_asset_receipts ar
+            JOIN {schema}.ops_receipts r ON r.id = ar.receipt_id
+            JOIN {schema}.purchase_order_lines pol ON pol.id = ar.purchase_order_line_id
+            JOIN {schema}.purchase_orders po ON po.id = pol.purchase_order_id
+            LEFT JOIN {schema}.vendors v ON v.id = po.vendor_id
+            WHERE ar.company_id = %s AND ar.receipt_id = %s AND ar.purchase_order_line_id = %s
+            LIMIT 1;
+            """,
+            (company_id, receipt_id, purchase_order_line_id),
+        )
+        if not row:
+            raise ValueError("Asset receipt record not found.")
+
+        return {
+            "id": row["id"],
+            "receipt_id": row["receipt_id"],
+            "purchase_order_line_id": row["purchase_order_line_id"],
+            "asset_name": row["asset_name"] or row.get("po_line_description") or "Capital Asset",
+            "asset_category": row["asset_category"] or "Equipment",
+            "serial_no": row["serial_no"] or "",
+            "manufacturer": row["manufacturer"] or "",
+            "model_no": row["model_no"] or "",
+            "acquisition_date": str(row["acquisition_date"] or row.get("receipt_date") or ""),
+            "placed_in_service_date": str(row["placed_in_service_date"] or row["acquisition_date"] or row.get("receipt_date") or ""),
+            "acquisition_cost": float(row.get("line_total") or row.get("unit_price") or 0),
+            "expected_useful_life_months": row["expected_useful_life_months"] or 36,
+            "residual_value": float(row["residual_value"] or 0),
+            "location_text": row["location_text"] or "",
+            "po_no": row.get("po_no") or "",
+            "receipt_no": row.get("receipt_number") or "",
+            "vendor_name": row.get("vendor_name") or "",
+            "handoff_status": row.get("handoff_status") or "ready",
+            "asset_register_id": row.get("asset_register_id"),
+        }
+
+    def complete_ops_asset_handoff(self, company_id: int, receipt_id: int, purchase_order_line_id: int, asset_register_id=None, actor_user_id=None) -> dict:
+        company_id = int(company_id)
+        receipt_id = int(receipt_id)
+        purchase_order_line_id = int(purchase_order_line_id)
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(
+            f"""
+            UPDATE {schema}.ops_asset_receipts
+            SET handoff_status = 'created',
+                asset_register_id = COALESCE(%s, asset_register_id),
+                handed_off_at = NOW()
+            WHERE company_id = %s AND receipt_id = %s AND purchase_order_line_id = %s
+            RETURNING *;
+            """,
+            (asset_register_id, company_id, receipt_id, purchase_order_line_id),
+        )
+
+    def get_ops_lease_handoff_payload(self, company_id: int, receipt_id: int) -> dict:
+        company_id = int(company_id)
+        receipt_id = int(receipt_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            SELECT 
+                lr.*,
+                r.receipt_number,
+                r.receipt_date,
+                r.status as receipt_status,
+                po.po_no,
+                po.currency,
+                po.total_amount as po_total_amount,
+                v.name as vendor_name,
+                v.id as vendor_id
+            FROM {schema}.ops_lease_receipts lr
+            JOIN {schema}.ops_receipts r ON r.id = lr.receipt_id
+            JOIN {schema}.purchase_orders po ON po.id = lr.purchase_order_id
+            LEFT JOIN {schema}.vendors v ON v.id = po.vendor_id
+            WHERE lr.company_id = %s AND lr.receipt_id = %s
+            LIMIT 1;
+            """,
+            (company_id, receipt_id),
+        )
+        if not row:
+            raise ValueError("Lease receipt record not found.")
+
+        return {
+            "id": row["id"],
+            "receipt_id": row["receipt_id"],
+            "purchase_order_id": row["purchase_order_id"],
+            "commencement_date": str(row["commencement_date"] or row.get("receipt_date") or ""),
+            "underlying_asset": row["underlying_asset"] or "",
+            "location_text": row["location_text"] or "",
+            "contract_reference": row["contract_reference"] or "",
+            "lease_perspective": row.get("lease_perspective") or "lessee",
+            "po_no": row.get("po_no") or "",
+            "receipt_no": row.get("receipt_number") or "",
+            "vendor_name": row.get("vendor_name") or "",
+            "vendor_id": row.get("vendor_id"),
+            "po_total_amount": float(row.get("po_total_amount") or 0),
+            "handoff_status": row.get("handoff_status") or "ready",
+            "lease_module_id": row.get("lease_module_id"),
+        }
+
+    def complete_ops_lease_handoff(self, company_id: int, receipt_id: int, lease_module_id=None, actor_user_id=None) -> dict:
+        company_id = int(company_id)
+        receipt_id = int(receipt_id)
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(
+            f"""
+            UPDATE {schema}.ops_lease_receipts
+            SET handoff_status = 'created',
+                lease_module_id = COALESCE(%s, lease_module_id),
+                handed_off_at = NOW()
+            WHERE company_id = %s AND receipt_id = %s
+            RETURNING *;
+            """,
+            (lease_module_id, company_id, receipt_id),
         )
 
     def submit_ops_receipt(
@@ -257345,6 +257538,259 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "tables": [t["table_name"] for t in tables],
         }
     
+
+
+    # ─── Stage 2: Inquiry & Quote ───────────────────────────────────
+
+    def _next_inquiry_no(self, company_id: int) -> str:
+        """Generate next sequential inquiry number like INQ-2026-0001."""
+        import datetime
+        year = datetime.date.today().year
+        schema = f"company_{company_id}"
+        sql = f"""
+            SELECT COUNT(*) AS cnt
+            FROM {schema}.ops_inquiries
+            WHERE company_id = %s
+              AND EXTRACT(YEAR FROM created_at) = %s
+        """
+        row = self.fetch_one(sql, (company_id, year)) or {}
+        seq = (row.get("cnt") or 0) + 1
+        return f"INQ-{year}-{seq:04d}"
+
+    def create_ops_inquiry(self, company_id: int, payload: dict, actor_user_id: int) -> dict:
+        import secrets, hashlib, datetime
+        schema = f"company_{company_id}"
+        token_plain = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token_plain.encode()).hexdigest()
+        expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=90)
+        inquiry_no = self._next_inquiry_no(company_id)
+
+        sql = f"""
+            INSERT INTO {schema}.ops_inquiries (
+                company_id, inquiry_type, vendor_id, customer_id,
+                inquiry_no, title, description, scope_of_work,
+                status, token, token_hash, token_expires_at,
+                recipient_name, recipient_email, recipient_phone,
+                quote_template_items, created_by_user_id
+            ) VALUES (
+                %s, %s, %s, %s,
+                %s, %s, %s, %s,
+                'sent', %s, %s, %s,
+                %s, %s, %s,
+                %s, %s
+            ) RETURNING id, inquiry_no, status, created_at
+        """
+        row = self.fetch_one(sql, (
+            company_id,
+            payload.get("inquiry_type", "vendor"),
+            payload.get("vendor_id"),
+            payload.get("customer_id"),
+            inquiry_no,
+            payload["title"],
+            payload["description"],
+            payload.get("scope_of_work"),
+            token_plain,
+            token_hash,
+            expires_at,
+            payload.get("recipient_name"),
+            payload.get("recipient_email"),
+            payload.get("recipient_phone"),
+            payload.get("quote_template_items", []),
+            actor_user_id,
+        )) or {}
+        row["token"] = token_plain  # returned ONCE
+        return row
+
+    def list_ops_inquiries(self, company_id: int, inquiry_type=None, status=None) -> list:
+        schema = f"company_{company_id}"
+        where = ["i.company_id = %s"]
+        params = [company_id]
+        if inquiry_type:
+            where.append("i.inquiry_type = %s")
+            params.append(inquiry_type)
+        if status:
+            where.append("i.status = %s")
+            params.append(status)
+        sql = f"""
+            SELECT i.id, i.inquiry_no, i.inquiry_type, i.title,
+                   i.status, i.recipient_name, i.recipient_email,
+                   i.created_at, i.updated_at,
+                   v.name AS vendor_name, c.name AS customer_name
+            FROM {schema}.ops_inquiries i
+            LEFT JOIN {schema}.vendors v ON v.id = i.vendor_id AND v.company_id = i.company_id
+            LEFT JOIN {schema}.customers c ON c.id = i.customer_id AND c.company_id = i.company_id
+            WHERE {" AND ".join(where)}
+            ORDER BY i.created_at DESC
+        """
+        return self.fetch_all(sql, tuple(params)) or []
+
+    def get_ops_inquiry(self, company_id: int, inquiry_id: int) -> dict:
+        schema = f"company_{company_id}"
+        sql = f"""
+            SELECT i.*,
+                   v.name AS vendor_name, c.name AS customer_name,
+                   COALESCE(
+                     (SELECT json_agg(d ORDER BY d.created_at)
+                      FROM {schema}.ops_inquiry_documents d
+                      WHERE d.inquiry_id = i.id), '[]'
+                   ) AS documents
+            FROM {schema}.ops_inquiries i
+            LEFT JOIN {schema}.vendors v ON v.id = i.vendor_id AND v.company_id = i.company_id
+            LEFT JOIN {schema}.customers c ON c.id = i.customer_id AND c.company_id = i.company_id
+            WHERE i.id = %s AND i.company_id = %s
+        """
+        return self.fetch_one(sql, (inquiry_id, company_id)) or {}
+
+    def get_ops_inquiry_by_token(self, company_id: int, token: str) -> dict:
+        import datetime
+        schema = f"company_{company_id}"
+        sql = f"""
+            SELECT id, inquiry_no, inquiry_type, title, description, scope_of_work,
+                   status, recipient_name, recipient_email,
+                   response_text, response_lead_time, response_availability,
+                   responded_at, responded_by_name,
+                   quote_requested_at, quote_request_notes, quote_required_by_date,
+                   quote_template_items, quote_reference, quote_amount,
+                   quote_currency, quote_valid_until, quote_payment_terms,
+                   quote_delivery_terms, quote_details, quote_file_url, quote_file_name,
+                   quote_submitted_at, token_expires_at, created_at,
+                   COALESCE(
+                     (SELECT json_agg(d ORDER BY d.created_at)
+                      FROM {schema}.ops_inquiry_documents d
+                      WHERE d.inquiry_id = {schema}.ops_inquiries.id), '[]'
+                   ) AS documents
+            FROM {schema}.ops_inquiries
+            WHERE token = %s AND company_id = %s
+        """
+        row = self.fetch_one(sql, (token, company_id)) or {}
+        if not row:
+            return {}
+        # check expiry
+        expires = row.get("token_expires_at")
+        if expires:
+            if hasattr(expires, "utcoffset"):
+                now = datetime.datetime.now(datetime.timezone.utc)
+            else:
+                now = datetime.datetime.utcnow()
+            if expires < now:
+                return {"_expired": True}
+        return row
+
+    def submit_inquiry_response(self, company_id: int, token: str, payload: dict) -> dict:
+        schema = f"company_{company_id}"
+        sql = f"""
+            UPDATE {schema}.ops_inquiries
+            SET response_text = %s,
+                response_lead_time = %s,
+                response_availability = %s,
+                responded_at = NOW(),
+                responded_by_name = %s,
+                responded_by_email = %s,
+                status = 'responded',
+                updated_at = NOW()
+            WHERE token = %s AND company_id = %s
+              AND status IN ('sent', 'responded')
+            RETURNING id, inquiry_no, status
+        """
+        return self.fetch_one(sql, (
+            payload.get("response_text"),
+            payload.get("response_lead_time"),
+            payload.get("response_availability"),
+            payload.get("responded_by_name"),
+            payload.get("responded_by_email"),
+            token, company_id,
+        )) or {}
+
+    def request_inquiry_quote(self, company_id: int, inquiry_id: int, payload: dict, actor_user_id: int) -> dict:
+        schema = f"company_{company_id}"
+        import json
+        sql = f"""
+            UPDATE {schema}.ops_inquiries
+            SET quote_requested_at = NOW(),
+                quote_request_notes = %s,
+                quote_required_by_date = %s,
+                quote_template_items = %s,
+                status = 'quote_requested',
+                updated_at = NOW()
+            WHERE id = %s AND company_id = %s
+              AND status = 'responded'
+            RETURNING id, inquiry_no, status
+        """
+        items = payload.get("quote_template_items", [])
+        return self.fetch_one(sql, (
+            payload.get("quote_request_notes"),
+            payload.get("quote_required_by_date"),
+            json.dumps(items) if isinstance(items, list) else items,
+            inquiry_id, company_id,
+        )) or {}
+
+    def submit_inquiry_quote(self, company_id: int, token: str, payload: dict) -> dict:
+        import json
+        schema = f"company_{company_id}"
+        sql = f"""
+            UPDATE {schema}.ops_inquiries
+            SET quote_reference = %s,
+                quote_amount = %s,
+                quote_currency = %s,
+                quote_valid_until = %s,
+                quote_payment_terms = %s,
+                quote_delivery_terms = %s,
+                quote_details = %s,
+                quote_file_url = %s,
+                quote_file_name = %s,
+                quote_submitted_at = NOW(),
+                status = 'quote_submitted',
+                updated_at = NOW()
+            WHERE token = %s AND company_id = %s
+              AND status = 'quote_requested'
+            RETURNING id, inquiry_no, status
+        """
+        details = payload.get("quote_details", {})
+        return self.fetch_one(sql, (
+            payload.get("quote_reference"),
+            payload.get("quote_amount"),
+            payload.get("quote_currency", "ZAR"),
+            payload.get("quote_valid_until"),
+            payload.get("quote_payment_terms"),
+            payload.get("quote_delivery_terms"),
+            json.dumps(details) if isinstance(details, dict) else details,
+            payload.get("quote_file_url"),
+            payload.get("quote_file_name"),
+            token, company_id,
+        )) or {}
+
+    def attach_inquiry_document(
+        self, company_id: int, inquiry_id: int,
+        file_name: str, file_url: str,
+        uploaded_by_party: str = "company",
+        document_type: str = "attachment",
+        file_size_bytes: int = None,
+        content_type: str = None,
+    ) -> dict:
+        schema = f"company_{company_id}"
+        sql = f"""
+            INSERT INTO {schema}.ops_inquiry_documents
+              (company_id, inquiry_id, uploaded_by_party, document_type, file_name, file_url, file_size_bytes, content_type)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, file_name, file_url, created_at
+        """
+        return self.fetch_one(sql, (
+            company_id, inquiry_id, uploaded_by_party, document_type,
+            file_name, file_url, file_size_bytes, content_type,
+        )) or {}
+
+    def close_ops_inquiry(self, company_id: int, inquiry_id: int, decision: str, actor_user_id: int) -> dict:
+        schema = f"company_{company_id}"
+        status = "accepted" if decision == "accepted" else "rejected"
+        sql = f"""
+            UPDATE {schema}.ops_inquiries
+            SET status = %s, updated_at = NOW()
+            WHERE id = %s AND company_id = %s
+              AND status IN ('quote_submitted','responded','sent')
+            RETURNING id, inquiry_no, status
+        """
+        return self.fetch_one(sql, (status, inquiry_id, company_id)) or {}
+
 
 # singleton instance used by services
 db_service = DatabaseService(DB_CONNECTION_STRING)

@@ -18204,261 +18204,66 @@ body{
               </div>
             </div>
 
-            <!-- ═══ REMITTANCE IMPORT PANEL (toggled by checkbox) ═══ -->
-            <!-- Remittance Import toggle -->
+            <!-- ═══ RECEIPT / BILL SCAN TOGGLE (PDF or Image) ═══ -->
             <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
-              <label id="remittanceImportToggleLabel"
+              <label id="receiptScanToggleLabel"
                      style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;
                             padding:8px 14px;border-radius:10px;background:#fff;
                             border:1px solid rgba(15,23,42,.12);
                             font-size:12px;font-weight:600;color:#334155;
                             transition:all .15s ease;">
-                <input type="checkbox" id="remittanceImportToggle"
+                <input type="checkbox" id="receiptScanToggle"
                        style="width:16px;height:16px;accent-color:#00C8C8;cursor:pointer;">
-                Remittance Import
+                Upload Receipt (PDF or Image)
               </label>
             </div>
 
-            <!-- Remittance Import panel (hidden until checkbox is checked) -->
-            <div id="remittanceImportPanel" class="hidden space-y-4"
-                 style="margin-bottom:16px;">
+            <!-- Receipt / bill scan container (toggled by checkbox) -->
+            <div id="receiptScanMount" class="hidden" style="margin-bottom:16px; display:none;"></div>
 
-              <!-- Upload card -->
-              <div class="cc-card" style="--i:0">
-                <div class="cc-card-head">
-                  <div class="cc-card-title">
-                    <span class="cc-ico">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                           stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="17 8 12 3 7 8"/>
-                        <line x1="12" y1="3" x2="12" y2="15"/>
-                      </svg>
-                    </span>
-                    <div class="cc-title-text">
-                      <h3>Upload remittance advice</h3>
-                      <p>Drop a remittance PDF/file here to auto-post journals directly to General Ledger.</p>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <button id="jrnlRemitPreviewBtn" class="cc-btn" disabled>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                           stroke-linejoin="round">
-                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                        <circle cx="12" cy="12" r="3"/>
-                      </svg>
-                      Preview journals
-                    </button>
-                    <button id="jrnlRemitPostBtn" class="cc-btn cc-btn--solid" disabled>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                           stroke-linejoin="round">
-                        <path d="M5 12h14"/><path d="M12 5v14"/>
-                      </svg>
-                      Post journals
-                    </button>
-                  </div>
-                </div>
-
-                <div class="cc-card-body">
-                  <div id="jrnlRemitDropZone"
-                       class="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors"
-                       style="border-color:#cbd5e1;">
-                    <input type="file" id="jrnlRemitFileInput"
-                           accept=".pdf,.txt" class="hidden">
-                    <div id="jrnlRemitDropIcon" class="text-4xl mb-2">📄</div>
-                    <p id="jrnlRemitDropLabel" class="text-sm text-slate-600">
-                      Drop remittance PDF here or click to browse
-                    </p>
-                    <p class="text-xs text-slate-400 mt-1">
-                      Accepted: .pdf, .txt — Max size: 10 MB
-                    </p>
-                  </div>
-
-                  <div id="jrnlRemitErrorBanner" class="hidden mt-4 p-3 rounded-lg"
-                       style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;">
-                    <span id="jrnlRemitErrorText"></span>
-                  </div>
-
-                  <div id="jrnlRemitLoading" class="hidden mt-4 flex items-center gap-3">
-                    <div class="w-5 h-5 border-2 rounded-full animate-spin"
-                         style="border-color:#00C8C8;border-top-color:transparent;"></div>
-                    <span class="text-sm text-slate-600">
-                      Processing remittance...
-                    </span>
-                  </div>
-
-                  <div id="jrnlRemitPreviewCard" class="hidden mt-4 p-4 rounded-xl border border-slate-200 bg-slate-50 text-sm">
-                    <div class="font-bold text-slate-800 mb-1">Journal Preview Summary</div>
-                    <div id="jrnlRemitPreviewSummary" class="text-slate-600"></div>
-                  </div>
-
-                  <div id="jrnlRemitResultsCard" class="hidden mt-4 p-4 rounded-xl border border-emerald-200 bg-emerald-50 text-sm">
-                    <div class="font-bold text-emerald-800 mb-1">Posting Complete ✓</div>
-                    <div id="jrnlRemitResultsSummary" class="text-emerald-700"></div>
-                  </div>
-
-                  <div class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                    <span>Looking for order matching, settlement, or marketplace aging?</span>
-                    <button type="button" onclick="window.switchScreen('marketplace')" class="text-teal-600 font-semibold hover:underline">
-                      Go to Marketplace Manager →
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-            <!-- ═══ END REMITTANCE IMPORT PANEL ═══ -->
-
-            <!-- Self-contained script for Journal screen upload (independent of makro_screen.js) -->
             <script>
             (function(){
-              function initJournalRemittance(){
-                var toggle = document.getElementById('remittanceImportToggle');
-                var panel = document.getElementById('remittanceImportPanel');
-                var label = document.getElementById('remittanceImportToggleLabel');
-                if(!toggle || !panel) return false;
+              function initReceiptScanToggle(){
+                var toggle = document.getElementById('receiptScanToggle');
+                var mount = document.getElementById('receiptScanMount');
+                var label = document.getElementById('receiptScanToggleLabel');
+                if(!toggle || !mount) return false;
                 if(toggle.dataset.bound) return true;
                 toggle.dataset.bound = '1';
 
-                toggle.addEventListener('change', function(){
+                function updateState(){
+                  var rjPanel = document.getElementById('rjPanel');
                   if(toggle.checked){
-                    panel.classList.remove('hidden');
+                    mount.classList.remove('hidden');
+                    mount.style.display = '';
+                    if(rjPanel) { rjPanel.classList.remove('hidden'); rjPanel.style.display = ''; }
                     if(label){
                       label.style.borderColor = 'rgba(0,200,200,0.5)';
                       label.style.background = 'rgba(0,200,200,0.06)';
                       label.style.color = '#00284F';
                     }
                   } else {
-                    panel.classList.add('hidden');
+                    mount.classList.add('hidden');
+                    mount.style.display = 'none';
+                    if(rjPanel) { rjPanel.classList.add('hidden'); rjPanel.style.display = 'none'; }
                     if(label){
                       label.style.borderColor = 'rgba(15,23,42,.12)';
                       label.style.background = '#fff';
                       label.style.color = '#334155';
                     }
                   }
-                });
-
-                var dropZone = document.getElementById('jrnlRemitDropZone');
-                var fileInput = document.getElementById('jrnlRemitFileInput');
-                var dropLabel = document.getElementById('jrnlRemitDropLabel');
-                var previewBtn = document.getElementById('jrnlRemitPreviewBtn');
-                var postBtn = document.getElementById('jrnlRemitPostBtn');
-                var errorBanner = document.getElementById('jrnlRemitErrorBanner');
-                var errorText = document.getElementById('jrnlRemitErrorText');
-                var loading = document.getElementById('jrnlRemitLoading');
-                var previewCard = document.getElementById('jrnlRemitPreviewCard');
-                var resultsCard = document.getElementById('jrnlRemitResultsCard');
-                var selectedFile = null;
-
-                function getCid(){
-                  return (typeof getActiveCompanyId === 'function' ? getActiveCompanyId() : null) || window.CURRENT_COMPANY_ID || 1;
                 }
 
-                function onSelect(file){
-                  if(!file) return;
-                  selectedFile = file;
-                  if(dropLabel) dropLabel.textContent = file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
-                  if(previewBtn) previewBtn.disabled = false;
-                  if(postBtn) postBtn.disabled = true;
-                  if(errorBanner) errorBanner.classList.add('hidden');
-                  if(previewCard) previewCard.classList.add('hidden');
-                  if(resultsCard) resultsCard.classList.add('hidden');
-                }
-
-                if(dropZone && fileInput){
-                  dropZone.addEventListener('click', function(){ fileInput.click(); });
-                  fileInput.addEventListener('change', function(e){
-                    if(e.target.files && e.target.files[0]) onSelect(e.target.files[0]);
-                  });
-                  dropZone.addEventListener('dragover', function(e){
-                    e.preventDefault();
-                    dropZone.style.borderColor = '#00C8C8';
-                  });
-                  dropZone.addEventListener('dragleave', function(){
-                    dropZone.style.borderColor = '#cbd5e1';
-                  });
-                  dropZone.addEventListener('drop', function(e){
-                    e.preventDefault();
-                    dropZone.style.borderColor = '#cbd5e1';
-                    if(e.dataTransfer.files && e.dataTransfer.files[0]) onSelect(e.dataTransfer.files[0]);
-                  });
-                }
-
-                async function submitLegacy(dryRun){
-                  if(!selectedFile) return;
-                  var cid = getCid();
-                  if(!cid){
-                    if(errorText) errorText.textContent = 'No company selected.';
-                    if(errorBanner) errorBanner.classList.remove('hidden');
-                    return;
-                  }
-                  if(errorBanner) errorBanner.classList.add('hidden');
-                  if(loading) loading.classList.remove('hidden');
-
-                  var fd = new FormData();
-                  fd.append('file', selectedFile);
-                  fd.append('dry_run', dryRun ? 'true' : 'false');
-
-                  try {
-                    var res = await fetch('/api/companies/' + cid + '/makro/remittance/upload', {
-                      method: 'POST',
-                      body: fd,
-                      credentials: 'include'
-                    });
-                    var data = await res.json();
-                    if(loading) loading.classList.add('hidden');
-
-                    if(!res.ok || data.error){
-                      if(errorText) errorText.textContent = data.error || 'Server error';
-                      if(errorBanner) errorBanner.classList.remove('hidden');
-                      return;
-                    }
-
-                    if(dryRun){
-                      if(previewCard){
-                        previewCard.classList.remove('hidden');
-                        var txt = document.getElementById('jrnlRemitPreviewSummary');
-                        if(txt){
-                          var sum = data.summary || {};
-                          var cnt = data.counts || {};
-                          txt.textContent = 'Parsed ' + (cnt.journals_count || data.journals_count || 0) + ' journals. Total sales: R ' + ((sum.total_sales != null ? sum.total_sales : data.total_sales) || 0).toLocaleString() + ', Fees: R ' + ((sum.total_commission != null ? sum.total_commission : data.total_commission) || 0).toLocaleString() + ', Net: R ' + ((sum.total_net != null ? sum.total_net : data.total_net) || 0).toLocaleString();
-                        }
-                      }
-                      if(postBtn) postBtn.disabled = false;
-                    } else {
-                      if(resultsCard){
-                        resultsCard.classList.remove('hidden');
-                        var resTxt = document.getElementById('jrnlRemitResultsSummary');
-                        if(resTxt){
-                          resTxt.textContent = 'Successfully posted ' + (data.posted || data.journals_posted || 0) + ' journal(s) to General Ledger. AR Control clears to zero.';
-                        }
-                      }
-                      if(postBtn) postBtn.disabled = true;
-                      if(previewBtn) previewBtn.disabled = true;
-                    }
-                  } catch(err){
-                    if(loading) loading.classList.add('hidden');
-                    if(errorText) errorText.textContent = err.message || 'Network error';
-                    if(errorBanner) errorBanner.classList.remove('hidden');
-                  }
-                }
-
-                if(previewBtn) previewBtn.addEventListener('click', function(){ submitLegacy(true); });
-                if(postBtn) postBtn.addEventListener('click', function(){
-                  if(confirm('Post all remittance journals to the General Ledger?')) submitLegacy(false);
-                });
-
+                toggle.addEventListener('change', updateState);
+                updateState();
                 return true;
               }
 
-              if(!initJournalRemittance()){
+              if(!initReceiptScanToggle()){
                 var obs = new MutationObserver(function(){
                   var s = document.getElementById('screen-journal');
                   if(s && s.classList.contains('active')){
-                    if(initJournalRemittance()) obs.disconnect();
+                    if(initReceiptScanToggle()) obs.disconnect();
                   }
                 });
                 var host = document.getElementById('screensHost') || document.body;
@@ -18466,7 +18271,7 @@ body{
               }
             })();
             </script>
-            <!-- End self-contained script for Journal screen upload -->
+            <!-- ═══ END RECEIPT / BILL SCAN TOGGLE ═══ -->
 
             <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start w-full">
 
@@ -40581,9 +40386,9 @@ body{
 
     loadScript("/dist/assets/hostMount.js?v=20261108a", { module: true });
 
-    loadScript("/dashboard.js?v=20261117a");
+    loadScript("/dashboard.js?v=20261117b");
 
-    loadScript("/receipt-journal.js?v=20261018a");
+    loadScript("/receipt-journal.js?v=20261117b");
     /* ==================================================================
      * 🎯 PAYE TAX FILING MODULE - Add AFTER dashboard.js
      * ================================================================== */

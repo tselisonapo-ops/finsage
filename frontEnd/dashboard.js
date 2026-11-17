@@ -146518,6 +146518,90 @@ function bindAP() {
 
   window.applyLeaseApPrefill = applyLeaseApPrefill;
 
+  async function openOpsAssetHandoff(receiptId, poLineId) {
+    const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.cid;
+    receiptId = Number(receiptId || 0);
+    poLineId = Number(poLineId || 0);
+    if (!cid || !receiptId || !poLineId) return false;
+
+    try {
+      const res = await window.apiFetch(
+        `/api/companies/${cid}/ops/receipts/${receiptId}/asset-handoff/${poLineId}`,
+        { method: "GET" }
+      );
+      const data = res?.data || res;
+      if (!data) throw new Error("Could not load asset handoff payload");
+
+      await window.switchScreen?.("fixedassets");
+
+      await window.openFixedAssetsDrawer?.({
+        mode: "acquire",
+        source: "ops_receipt",
+        defaults: {
+          name: data.description || data.po_line_description || "Acquired Asset",
+          category: data.category || "Plant and Machinery",
+          cost: Number(data.line_total || data.unit_price || 0),
+          acquisition_date: data.receipt_date || "",
+          placed_in_service_date: data.placed_in_service_date || data.receipt_date || "",
+          serial_no: data.serial_number || data.asset_tag || "",
+          location: data.location_text || "",
+          supplier: data.vendor_name || "",
+          notes: `Ops PO: ${data.po_no || ''}, Receipt: ${data.receipt_number || ''}`,
+          ops_receipt_id: receiptId,
+          ops_po_line_id: poLineId
+        }
+      });
+      return true;
+    } catch (e) {
+      console.error("[OPS ASSET HANDOFF] Error:", e);
+      alert(e.message || "Failed to load asset hand-over data");
+      return false;
+    }
+  }
+  window.openOpsAssetHandoff = openOpsAssetHandoff;
+
+  async function openOpsLeaseHandoff(receiptId, leaseRole) {
+    const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.cid;
+    receiptId = Number(receiptId || 0);
+    if (!cid || !receiptId) return false;
+
+    try {
+      const res = await window.apiFetch(
+        `/api/companies/${cid}/ops/receipts/${receiptId}/lease-handoff`,
+        { method: "GET" }
+      );
+      const data = res?.data || res;
+      if (!data) throw new Error("Could not load lease handoff payload");
+
+      const perspective = (leaseRole || data.lease_perspective || "lessee").toLowerCase();
+
+      if (perspective === "lessor") {
+        await window.switchScreen?.("lessor-subsequent");
+      } else {
+        await window.switchScreen?.("lease-center");
+        if (typeof window.openLeaseWizard === "function") {
+          window.openLeaseWizard({
+            leaseRole: "lessee",
+            defaults: {
+              commencement_date: data.commencement_date || data.receipt_date || "",
+              underlying_asset: data.underlying_asset || data.receipt_number || "",
+              contract_reference: data.contract_reference || data.po_no || "",
+              vendor_name: data.vendor_name || "",
+              notes: `Ops PO: ${data.po_no || ''}, Receipt: ${data.receipt_number || ''}`,
+              ops_receipt_id: receiptId
+            }
+          });
+        }
+      }
+      return true;
+    } catch (e) {
+      console.error("[OPS LEASE HANDOFF] Error:", e);
+      alert(e.message || "Failed to load lease hand-over data");
+      return false;
+    }
+  }
+  window.openOpsLeaseHandoff = openOpsLeaseHandoff;
+
   // =================================================================
   // LESSOR LEASE IDC — AP BILL PREFILL
   // =================================================================
@@ -164326,6 +164410,29 @@ async function bootstrapApp(currentUser) {
   }
   if (urlParams.get("action") === "confirm" && urlParams.get("token")) {
     handleSigninClick({ preventDefault: () => {} });
+    return;
+  }
+
+  // Phase 7 Ops Hand-over route interception (Fixed Assets and Leases)
+  const incomingScreen = urlParams.get("screen");
+  const incomingAction = urlParams.get("action");
+  const receiptId = Number(urlParams.get("receipt_id") || 0);
+  const poLineId = Number(urlParams.get("po_line_id") || 0);
+  const leaseRole = (urlParams.get("lease_role") || "lessee").toLowerCase();
+
+  if (incomingScreen === "fixedassets" && incomingAction === "acquire_asset" && receiptId && poLineId) {
+    history.replaceState(null, "", window.location.pathname);
+    setTimeout(() => {
+      window.openOpsAssetHandoff?.(receiptId, poLineId);
+    }, 400);
+    return;
+  }
+
+  if ((incomingScreen === "leases" || incomingScreen === "lease-center" || incomingScreen === "lessor-subsequent") && (incomingAction === "lease_wizard" || incomingAction === "lessor_lease") && receiptId) {
+    history.replaceState(null, "", window.location.pathname);
+    setTimeout(() => {
+      window.openOpsLeaseHandoff?.(receiptId, leaseRole);
+    }, 400);
     return;
   }
 

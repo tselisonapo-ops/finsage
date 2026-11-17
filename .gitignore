@@ -76,3 +76,5 @@ Thumbs.db
 # -----------------------------
 
 node_modules/
+/src-tauri/
+/BackEnd/Services/desktop/

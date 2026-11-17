@@ -10,6 +10,7 @@ import PurchaseOrdersPage from "./pages/PurchaseOrdersPage";
 import PurchaseOrderPage from "./pages/PurchaseOrderPage";
 import InvoicesPage from "./pages/InvoicesPage";
 import InvoicePage from "./pages/InvoicePage";
+import InquiryResponsePage from "./pages/InquiryResponsePage";
 
 function Protected({children}){
   if(!getToken()||!getCompanyId()) return <Navigate to="/signin" replace/>;
@@ -31,6 +32,10 @@ export default function App(){
         <Route path="/purchase-orders/:poId" element={<Protected><PurchaseOrderPage/></Protected>}/>
         <Route path="/invoices" element={<Protected><InvoicesPage/></Protected>}/>
         <Route path="/invoices/:invoiceId" element={<Protected><InvoicePage/></Protected>}/>
+
+        {/* ── Public inquiry portal (no login required) ── */}
+        <Route path="/inquiry/:inquiryId" element={<InquiryResponsePage/>}/>
+
         <Route path="*" element={<Navigate to="/" replace/>}/>
       </Routes>
     </BrowserRouter>

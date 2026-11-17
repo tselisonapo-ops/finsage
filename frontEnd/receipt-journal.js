@@ -559,10 +559,30 @@
     style.textContent = CSS;
     document.head.appendChild(style);
 
-    const host = screen.querySelector(".cc-card") || screen.firstElementChild;
-    const wrap = document.createElement("div");
-    wrap.innerHTML = panelMarkup();
-    (host && host.parentElement ? host.parentElement : screen).insertBefore(wrap, host || screen.firstChild);
+    const mount = document.getElementById("receiptScanMount");
+    if (mount) {
+      mount.innerHTML = panelMarkup();
+    } else {
+      const host = screen.querySelector(".cc-card") || screen.firstElementChild;
+      const wrap = document.createElement("div");
+      wrap.innerHTML = panelMarkup();
+      (host && host.parentElement ? host.parentElement : screen).insertBefore(wrap, host || screen.firstChild);
+    }
+
+    // Connect with receiptScanToggle if present
+    const toggle = document.getElementById("receiptScanToggle");
+    const rj = document.getElementById("rjPanel");
+    if (toggle && rj) {
+      if (!toggle.checked) {
+        if (mount) mount.style.display = "none";
+        rj.style.display = "none";
+      }
+      toggle.addEventListener("change", () => {
+        if (toggle.checked) {
+          listDocs().catch(() => {});
+        }
+      });
+    }
 
     bindUpload();
     listDocs().catch((e) => console.warn("[receipt-journal] list failed", e));

@@ -12,7 +12,7 @@ from flask import jsonify, request, g  # ✅ For Flask response helpers
 from flask import Blueprint,current_app,jsonify,request,send_file,g
 from BackEnd.Services.db_service import db_service
 from BackEnd.Services.auth_middleware import require_auth
-from BackEnd.Services.ops_auth import require_ops_access,require_ops_permission, require_vendor_portal_auth
+from BackEnd.Services.ops_auth import require_ops_access, require_ops_permission, require_vendor_portal_auth, require_finsage_accounting_access
 
 ops_bp=Blueprint(
     "ops",
@@ -5589,3 +5589,257 @@ def reorder_alerts(company_id):
 # ============================================================
 # END OF PHASE 6 INVENTORY ROUTES
 # ============================================================
+
+
+# ============================================================
+# PHASE 7 — ASSET & LEASE ACCOUNTING HAND-OVER
+# ============================================================
+
+@ops_bp.get("/auth/accounting-status")
+@require_auth
+def get_user_accounting_status(company_id):
+    user = getattr(g, "current_user", {}) or {}
+    user_id = int(user.get("id") or user.get("user_id") or 0)
+    has_access = db_service.user_has_finsage_accounting_access(company_id, user_id)
+    return jsonify({
+        "can_access_accounting": has_access,
+        "company_id": company_id,
+        "user_id": user_id
+    }), 200
+
+@ops_bp.get("/receipts/<int:receipt_id>/asset-handoff/<int:po_line_id>")
+@require_auth
+@require_finsage_accounting_access
+def preview_asset_handoff(company_id, receipt_id, po_line_id):
+    try:
+        data = db_service.get_ops_asset_handoff_payload(company_id, receipt_id, po_line_id)
+        return jsonify(data), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": "Failed to load asset handoff payload", "detail": str(e)}), 500
+
+@ops_bp.post("/receipts/<int:receipt_id>/asset-handoff/<int:po_line_id>")
+@require_auth
+@require_finsage_accounting_access
+def complete_asset_handoff_route(company_id, receipt_id, po_line_id):
+    body = request.get_json(silent=True) or {}
+    asset_id = body.get("asset_register_id")
+    try:
+        updated = db_service.complete_ops_asset_handoff(
+            company_id,
+            receipt_id,
+            po_line_id,
+            asset_register_id=asset_id,
+            actor_user_id=_uid()
+        )
+        return jsonify(updated), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@ops_bp.get("/receipts/<int:receipt_id>/lease-handoff")
+@require_auth
+@require_finsage_accounting_access
+def preview_lease_handoff(company_id, receipt_id):
+    try:
+        data = db_service.get_ops_lease_handoff_payload(company_id, receipt_id)
+        return jsonify(data), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": "Failed to load lease handoff payload", "detail": str(e)}), 500
+
+@ops_bp.post("/receipts/<int:receipt_id>/lease-handoff")
+@require_auth
+@require_finsage_accounting_access
+def complete_lease_handoff_route(company_id, receipt_id):
+    body = request.get_json(silent=True) or {}
+    lease_module_id = body.get("lease_module_id")
+    try:
+        updated = db_service.complete_ops_lease_handoff(
+            company_id,
+            receipt_id,
+            lease_module_id=lease_module_id,
+            actor_user_id=_uid()
+        )
+        return jsonify(updated), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════════════
+# STAGE 2: INQUIRY & QUOTE ROUTES
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Import inquiry token auth ──────────────────────────────────────
+from BackEnd.Services.ops_auth import require_inquiry_token_auth as _riqta
+
+# ── Helper: get inquiry token auth (lazy bind) ────────────────────
+def _inq_token_auth(f):
+    return _riqta(f)
+
+# ── Internal routes (Company A) ───────────────────────────────────
+
+@ops.route("/inquiries", methods=["POST"])
+@require_auth
+@require_ops_permission("procurement.view")
+def create_inquiry(company_id):
+    """Create a new vendor or customer inquiry."""
+    data = request.get_json(force=True) or {}
+    if not data.get("title") or not data.get("description"):
+        return jsonify({"error": "title and description are required"}), 400
+    result = db_service.create_ops_inquiry(company_id, data, g.user_id)
+    return jsonify(result), 201
+
+
+@ops.route("/inquiries", methods=["GET"])
+@require_auth
+@require_ops_permission("procurement.view")
+def list_inquiries(company_id):
+    """List inquiries filtered by type and/or status."""
+    inquiry_type = request.args.get("type")
+    status = request.args.get("status")
+    items = db_service.list_ops_inquiries(company_id, inquiry_type=inquiry_type, status=status)
+    return jsonify({"inquiries": items})
+
+
+@ops.route("/inquiries/<int:inquiry_id>", methods=["GET"])
+@require_auth
+@require_ops_permission("procurement.view")
+def get_inquiry(company_id, inquiry_id):
+    """Get full inquiry detail."""
+    row = db_service.get_ops_inquiry(company_id, inquiry_id)
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(row)
+
+
+@ops.route("/inquiries/<int:inquiry_id>/request-quote", methods=["POST"])
+@require_auth
+@require_ops_permission("procurement.view")
+def request_inquiry_quote_route(company_id, inquiry_id):
+    """Request a quote from the counterparty."""
+    data = request.get_json(force=True) or {}
+    result = db_service.request_inquiry_quote(company_id, inquiry_id, data, g.user_id)
+    if not result:
+        return jsonify({"error": "Cannot request quote — check inquiry status"}), 400
+    return jsonify(result)
+
+
+@ops.route("/inquiries/<int:inquiry_id>/close", methods=["POST"])
+@require_auth
+@require_ops_permission("procurement.view")
+def close_inquiry_route(company_id, inquiry_id):
+    """Accept or reject an inquiry."""
+    data = request.get_json(force=True) or {}
+    decision = data.get("decision", "rejected")
+    if decision not in ("accepted", "rejected"):
+        return jsonify({"error": "decision must be 'accepted' or 'rejected'"}), 400
+    result = db_service.close_ops_inquiry(company_id, inquiry_id, decision, g.user_id)
+    if not result:
+        return jsonify({"error": "Cannot close inquiry"}), 400
+    return jsonify(result)
+
+
+# ── External portal routes (Company B — no JWT) ───────────────────
+
+@ops.route("/portal/inquiries/<string:token>", methods=["GET"])
+def portal_view_inquiry(company_id, token):
+    """Public token-gated: view inquiry detail."""
+    inquiry = db_service.get_ops_inquiry_by_token(company_id, token)
+    if not inquiry:
+        return jsonify({"error": "Invalid or unknown token"}), 401
+    if inquiry.get("_expired"):
+        return jsonify({"error": "This inquiry link has expired"}), 401
+    return jsonify(inquiry)
+
+
+@ops.route("/portal/inquiries/<string:token>/respond", methods=["POST"])
+def portal_respond_inquiry(company_id, token):
+    """Public token-gated: submit general response (step 1)."""
+    inquiry = db_service.get_ops_inquiry_by_token(company_id, token)
+    if not inquiry:
+        return jsonify({"error": "Invalid or unknown token"}), 401
+    if inquiry.get("_expired"):
+        return jsonify({"error": "This inquiry link has expired"}), 401
+
+    data = request.get_json(force=True) or {}
+    if not data.get("response_text"):
+        return jsonify({"error": "response_text is required"}), 400
+
+    result = db_service.submit_inquiry_response(company_id, token, data)
+    if not result:
+        return jsonify({"error": "Cannot submit response — check status"}), 400
+    return jsonify(result)
+
+
+@ops.route("/portal/inquiries/<string:token>/submit-quote", methods=["POST"])
+def portal_submit_quote(company_id, token):
+    """Public token-gated: submit filled quote template (step 2a)."""
+    inquiry = db_service.get_ops_inquiry_by_token(company_id, token)
+    if not inquiry:
+        return jsonify({"error": "Invalid or unknown token"}), 401
+    if inquiry.get("_expired"):
+        return jsonify({"error": "This inquiry link has expired"}), 401
+
+    data = request.get_json(force=True) or {}
+    result = db_service.submit_inquiry_quote(company_id, token, data)
+    if not result:
+        return jsonify({"error": "Cannot submit quote — check status"}), 400
+    return jsonify(result)
+
+
+@ops.route("/portal/inquiries/<string:token>/upload", methods=["POST"])
+def portal_upload_inquiry_doc(company_id, token):
+    """Public token-gated: upload a quote document (step 2b)."""
+    inquiry = db_service.get_ops_inquiry_by_token(company_id, token)
+    if not inquiry:
+        return jsonify({"error": "Invalid or unknown token"}), 401
+    if inquiry.get("_expired"):
+        return jsonify({"error": "This inquiry link has expired"}), 401
+    if not inquiry.get("id"):
+        return jsonify({"error": "Inquiry not found"}), 404
+
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["file"]
+    quote_ref = request.form.get("quote_reference", "")
+    if not file.filename:
+        return jsonify({"error": "Empty filename"}), 400
+
+    import os, uuid
+    from werkzeug.utils import secure_filename
+    upload_dir = os.path.join(
+        current_app.root_path, "..", "uploads", "inquiries", str(company_id)
+    )
+    os.makedirs(upload_dir, exist_ok=True)
+
+    ext = os.path.splitext(secure_filename(file.filename))[1]
+    saved_name = f"{uuid.uuid4().hex}{ext}"
+    file_path = os.path.join(upload_dir, saved_name)
+    file.save(file_path)
+
+    relative_url = f"/uploads/inquiries/{company_id}/{saved_name}"
+    doc = db_service.attach_inquiry_document(
+        company_id=company_id,
+        inquiry_id=inquiry["id"],
+        file_name=file.filename,
+        file_url=relative_url,
+        uploaded_by_party="counterparty",
+        document_type="quote",
+        file_size_bytes=os.path.getsize(file_path),
+        content_type=file.content_type,
+    )
+
+    # Also update inquiry with quote_reference and mark submitted if quote_ref provided
+    if quote_ref:
+        db_service.submit_inquiry_quote(company_id, token, {
+            "quote_reference": quote_ref,
+            "quote_file_url": relative_url,
+            "quote_file_name": file.filename,
+            "quote_details": {},
+        })
+
+    return jsonify({"ok": True, "document": doc})
+

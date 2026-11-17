@@ -195,4 +195,38 @@ export const portalApi={
     request(`${base(companyId)}/invoices/${encodeURIComponent(invoiceId)}/submit`,{
         method:"POST",body:{}
     }),
+
+    // ── Inquiry portal (public token-gated, no JWT needed) ────────
+    // These are called directly with fetch in InquiryResponsePage.jsx
+    // using X-Inquiry-Token header; kept here as documentation references.
+
+    getInquiry:(companyId,token)=>
+        fetch(`/api/companies/${companyId}/ops/portal/inquiries/${encodeURIComponent(token)}`,{
+            headers:{"X-Inquiry-Token":token}
+        }).then(r=>r.json()),
+
+    respondToInquiry:(companyId,token,payload)=>
+        fetch(`/api/companies/${companyId}/ops/portal/inquiries/${encodeURIComponent(token)}/respond`,{
+            method:"POST",
+            headers:{"Content-Type":"application/json","X-Inquiry-Token":token},
+            body:JSON.stringify(payload)
+        }).then(r=>r.json()),
+
+    submitInquiryQuote:(companyId,token,payload)=>
+        fetch(`/api/companies/${companyId}/ops/portal/inquiries/${encodeURIComponent(token)}/submit-quote`,{
+            method:"POST",
+            headers:{"Content-Type":"application/json","X-Inquiry-Token":token},
+            body:JSON.stringify(payload)
+        }).then(r=>r.json()),
+
+    uploadInquiryDocument:(companyId,token,file,quoteRef="")=>{
+        const fd=new FormData();
+        fd.append("file",file);
+        if(quoteRef) fd.append("quote_reference",quoteRef);
+        return fetch(`/api/companies/${companyId}/ops/portal/inquiries/${encodeURIComponent(token)}/upload`,{
+            method:"POST",
+            headers:{"X-Inquiry-Token":token},
+            body:fd
+        }).then(r=>r.json());
+    },
 };

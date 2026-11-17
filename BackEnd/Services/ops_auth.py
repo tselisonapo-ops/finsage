@@ -112,3 +112,54 @@ def require_vendor_portal_auth(fn):
 
 
     return wrapper
+
+def require_finsage_accounting_access(fn):
+    @wraps(fn)
+    def wrapper(company_id, *args, **kwargs):
+        user = getattr(g, "current_user", {}) or {}
+        user_id = int(user.get("id") or user.get("user_id") or 0)
+
+        if not user_id:
+            return jsonify({"error": "Authentication required"}), 401
+
+        if not db_service.user_has_finsage_accounting_access(company_id, user_id):
+            return jsonify({
+                "error": "Access denied: Only accountants and administrators with FinSage ERP access can perform asset and lease accounting handovers."
+            }), 403
+
+        return fn(company_id, *args, **kwargs)
+    return wrapper
+
+
+def require_inquiry_token_auth(f):
+    """
+    Token-gated auth for external portal inquiry routes.
+    Reads token from X-Inquiry-Token header or ?token= query param.
+    Sets flask.g.inquiry and flask.g.inquiry_token.
+    No JWT required.
+    """
+    from functools import wraps
+    from flask import request, g, jsonify, current_app
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get("X-Inquiry-Token") or request.args.get("token")
+        if not token:
+            return jsonify({"error": "Inquiry token required"}), 401
+
+        company_id = kwargs.get("company_id")
+        if not company_id:
+            return jsonify({"error": "Company ID required"}), 400
+
+        from BackEnd.Services.db_service import db_service
+        inquiry = db_service.get_ops_inquiry_by_token(int(company_id), token)
+        if not inquiry:
+            return jsonify({"error": "Invalid or unknown token"}), 401
+        if inquiry.get("_expired"):
+            return jsonify({"error": "Inquiry link has expired"}), 401
+
+        g.inquiry = inquiry
+        g.inquiry_token = token
+        return f(*args, **kwargs)
+    return decorated
+
