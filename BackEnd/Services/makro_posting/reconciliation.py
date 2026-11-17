@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from .models import GeneratedJournal
+from .models import GeneratedJournal, PostedJournal
 
 
 class MakroReconciliation:

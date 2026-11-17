@@ -245,6 +245,7 @@ from BackEnd.Services.routes.payroll_tax_filing_routes import payroll_tax_filing
 
 # ═══ REMITTANCE IMPORT EXTENSION ═══
 from BackEnd.Services.makro_posting.blueprint import makro_bp
+from BackEnd.Services.marketplace import marketplace_bp
 
 from BackEnd.Services.control.auth import control_auth_bp
 from BackEnd.Services.control.customers import customers_bp 
@@ -765,6 +766,7 @@ app.register_blueprint(subscriptions_bp)
 
 # ═══ REMITTANCE IMPORT EXTENSION ═══
 app.register_blueprint(makro_bp)
+app.register_blueprint(marketplace_bp)
 
 register_practice(app, db_service)              # delegation uplift + client metering
 register_entitlement_gate(app, db_service)      # stash app.extensions["entitlements"]

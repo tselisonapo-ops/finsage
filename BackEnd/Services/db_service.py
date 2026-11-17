@@ -42665,6 +42665,14 @@ class DatabaseService:
                         ''ias41_grant_receipt'',
                         ''ias41_grant_receipt_reversal'',
                         ''makro_marketplace'',
+                        ''marketplace_order'',
+                        ''marketplace_order_reversal'',
+                        ''marketplace_cogs'',
+                        ''marketplace_cogs_reversal'',
+                        ''marketplace_fee'',
+                        ''marketplace_fee_reversal'',
+                        ''marketplace_settlement'',
+                        ''marketplace_settlement_reversal'',
                         ''system''
                     ]::text[])
                 )',
@@ -86191,6 +86199,32 @@ class DatabaseService:
                 line_no
             );
         """)
+
+    def ensure_marketplace_tables(self, company_id: int, *, cur=None) -> None:
+        """
+        Ensure dedicated marketplace tables exist for the company schema:
+          - marketplace_accounts
+          - marketplace_orders
+          - marketplace_order_lines
+          - marketplace_fees
+          - marketplace_remittances
+          - marketplace_remittance_lines
+          - marketplace_settlement_allocations
+        """
+        from BackEnd.Services.marketplace.ddl import (
+            ensure_marketplace_tables as _ensure_mp,
+            seed_default_marketplace_account,
+        )
+
+        def _run(_cur):
+            _ensure_mp(_cur, company_id)
+            seed_default_marketplace_account(_cur, company_id, "MAKRO")
+
+        if cur:
+            _run(cur)
+        else:
+            with self._conn_cursor(ddl=True) as (_c, _cur):
+                _run(_cur)
 
     def find_default_inventory_account_code(
         self,

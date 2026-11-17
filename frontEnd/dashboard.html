@@ -18223,6 +18223,33 @@ body{
             <div id="remittanceImportPanel" class="hidden space-y-4"
                  style="margin-bottom:16px;">
 
+              <!-- Marketplace Control Bar (Workflow, VAT Mode, Tabs) -->
+              <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:12px 16px; background:#f8fafc; border-radius:12px; border:1px solid #e2e8f0;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <label for="remitWorkflowMode" style="font-size:12px; font-weight:600; color:#475569;">Workflow:</label>
+                  <select id="remitWorkflowMode" style="padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px; background:#fff; font-weight:500; cursor:pointer;">
+                    <option value="matching" selected>Order Matching & Settle (New Flow)</option>
+                    <option value="direct_remit">Direct Remittance Posting (Legacy Flow)</option>
+                  </select>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <label for="remitVatMode" style="font-size:12px; font-weight:600; color:#475569;">VAT Mode:</label>
+                  <select id="remitVatMode" style="padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px; background:#fff; font-weight:500; cursor:pointer;">
+                    <option value="standard" selected>Standard 15% (VAT Inclusive & Recoverable)</option>
+                    <option value="zero_rated">Zero-Rated (0% VAT)</option>
+                    <option value="non_recoverable">Exempt / Non-Recoverable Input VAT</option>
+                  </select>
+                </div>
+                <div style="margin-left:auto; display:flex; gap:8px;">
+                  <button type="button" id="remitTabUpload" class="cc-btn cc-btn--sm" style="font-size:11px; font-weight:600; background:#e0f2fe; color:#0369a1; border-color:#bae6fd;">Remittance Upload</button>
+                  <button type="button" id="remitTabOrders" class="cc-btn cc-btn--sm" style="font-size:11px; font-weight:600;">Marketplace Orders</button>
+                  <button type="button" id="remitTabRecon" class="cc-btn cc-btn--sm" style="font-size:11px; font-weight:600;">Dashboard & Aging</button>
+                </div>
+              </div>
+
+              <!-- SECTION 1: Upload, Preview, Results -->
+              <div id="remitUploadSection" class="space-y-4">
+
               <!-- Upload card -->
               <div class="cc-card" style="--i:0">
                 <div class="cc-card-head">
@@ -18408,6 +18435,160 @@ body{
                   </div>
                 </div>
               </div>
+
+              </div>
+              <!-- ═══ END SECTION 1: Upload ═══ -->
+
+              <!-- SECTION 2: Marketplace Orders -->
+              <div id="remitOrdersSection" class="hidden space-y-4">
+                <div class="cc-card">
+                  <div class="cc-card-head">
+                    <div class="cc-card-title">
+                      <span class="cc-ico">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                             stroke-linejoin="round">
+                          <path d="m7.5 4.27 9 5.15"/>
+                          <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                          <path d="m3.3 7 8.7 5 8.7-5"/>
+                          <path d="M12 22V12"/>
+                        </svg>
+                      </span>
+                      <div class="cc-title-text">
+                        <h3>Marketplace Orders</h3>
+                        <p>Track order sales, inventory FIFO consumption, and settlement state.</p>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <select id="mktOrderStatusFilter" style="padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px; background:#fff;">
+                        <option value="">All Statuses</option>
+                        <option value="imported">Imported (Unposted)</option>
+                        <option value="posted">Posted to GL</option>
+                        <option value="settled">Settled</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                      <button type="button" id="mktOrdersRefreshBtn" class="cc-btn cc-btn--sm">↻ Refresh</button>
+                    </div>
+                  </div>
+                  <div class="cc-card-body">
+                    <div style="overflow-x:auto;">
+                      <table class="w-full text-left" style="font-size:12px; border-collapse:collapse;">
+                        <thead>
+                          <tr style="border-bottom:1px solid #e2e8f0; color:#64748b; font-size:11px; text-transform:uppercase;">
+                            <th style="padding:8px;">Order Ref</th>
+                            <th style="padding:8px;">Date</th>
+                            <th style="padding:8px;">Status</th>
+                            <th style="padding:8px; text-align:right;">Gross</th>
+                            <th style="padding:8px; text-align:right;">Net</th>
+                            <th style="padding:8px; text-align:right;">VAT</th>
+                            <th style="padding:8px; text-align:right;">FIFO Cost</th>
+                            <th style="padding:8px;">Journal</th>
+                            <th style="padding:8px; text-align:center;">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody id="mktOrdersTableBody">
+                          <tr><td colspan="9" style="text-align:center; padding:16px; color:#94a3b8;">Switch to this tab or click Refresh to load marketplace orders.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- ═══ END SECTION 2: Marketplace Orders ═══ -->
+
+              <!-- SECTION 3: Dashboard & Reconciliation -->
+              <div id="remitDashboardSection" class="hidden space-y-4">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div class="cc-kpi cc-kpi--cash">
+                    <div class="cc-kpi-top"><span class="cc-kpi-label">Marketplace Gross Sales</span></div>
+                    <div class="cc-kpi-value" id="mktKpiGrossSales">R 0.00</div>
+                  </div>
+                  <div class="cc-kpi cc-kpi--ap">
+                    <div class="cc-kpi-top"><span class="cc-kpi-label">Marketplace Fees</span></div>
+                    <div class="cc-kpi-value" id="mktKpiFees" style="color:#b45309;">R 0.00</div>
+                  </div>
+                  <div class="cc-kpi cc-kpi--np">
+                    <div class="cc-kpi-top"><span class="cc-kpi-label">Actual Settlements</span></div>
+                    <div class="cc-kpi-value" id="mktKpiSettlements" style="color:#047857;">R 0.00</div>
+                  </div>
+                  <div class="cc-kpi cc-kpi--vat">
+                    <div class="cc-kpi-top"><span class="cc-kpi-label">Subledger AR Balance</span></div>
+                    <div class="cc-kpi-value" id="mktKpiSubledgerAr">R 0.00</div>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <!-- Reconciliation Card -->
+                  <div class="cc-card">
+                    <div class="cc-card-head">
+                      <div class="cc-card-title">
+                        <span class="cc-ico cc-ico--teal">
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                               stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                               stroke-linejoin="round">
+                            <line x1="18" y1="20" x2="18" y2="10"/>
+                            <line x1="12" y1="20" x2="12" y2="4"/>
+                            <line x1="6" y1="20" x2="6" y2="14"/>
+                          </svg>
+                        </span>
+                        <div class="cc-title-text">
+                          <h3>GL Control Account Reconciliation</h3>
+                          <p>Verifying Subledger vs Account BS_CA_9002</p>
+                        </div>
+                      </div>
+                      <span id="mktReconBadge" class="ckp-pill ckp-pill--ok">Reconciled</span>
+                    </div>
+                    <div class="cc-card-body space-y-2">
+                      <div class="cc-kv"><span>Subledger Expected Balance</span><span class="cc-kv-val" id="mktReconSubledgerVal">—</span></div>
+                      <div class="cc-kv"><span>GL Control Account Balance (Marketplace)</span><span class="cc-kv-val" id="mktReconGlVal">—</span></div>
+                      <div class="cc-kv"><span>Discrepancy / Variance</span><span class="cc-kv-val" id="mktReconDiffVal" style="font-weight:700;">—</span></div>
+                      <div class="cc-kv"><span>Orders Settled vs Total</span><span class="cc-kv-val" id="mktOrdersCountRatio">—</span></div>
+                    </div>
+                  </div>
+
+                  <!-- Aging Card -->
+                  <div class="cc-card">
+                    <div class="cc-card-head">
+                      <div class="cc-card-title">
+                        <span class="cc-ico">
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                               stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                               stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                          </svg>
+                        </span>
+                        <div class="cc-title-text">
+                          <h3>Unsettled Receivables Aging</h3>
+                          <p>Aging analysis of outstanding marketplace sales</p>
+                        </div>
+                      </div>
+                      <button type="button" id="mktReconRefreshBtn" class="cc-btn cc-btn--sm">↻ Refresh</button>
+                    </div>
+                    <div class="cc-card-body">
+                      <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
+                        <div class="p-3 rounded-lg" style="background:#f8fafc; border:1px solid #e2e8f0;">
+                          <div class="text-xs text-slate-500 font-medium">0 - 30 Days</div>
+                          <div class="text-sm font-bold text-slate-800 mt-1" id="mktAging0_30">R 0.00</div>
+                        </div>
+                        <div class="p-3 rounded-lg" style="background:#f8fafc; border:1px solid #e2e8f0;">
+                          <div class="text-xs text-slate-500 font-medium">31 - 60 Days</div>
+                          <div class="text-sm font-bold text-amber-600 mt-1" id="mktAging31_60">R 0.00</div>
+                        </div>
+                        <div class="p-3 rounded-lg" style="background:#f8fafc; border:1px solid #e2e8f0;">
+                          <div class="text-xs text-slate-500 font-medium">61 - 90 Days</div>
+                          <div class="text-sm font-bold text-orange-600 mt-1" id="mktAging61_90">R 0.00</div>
+                        </div>
+                        <div class="p-3 rounded-lg" style="background:#f8fafc; border:1px solid #e2e8f0;">
+                          <div class="text-xs text-slate-500 font-medium">90+ Days</div>
+                          <div class="text-sm font-bold text-rose-600 mt-1" id="mktAging90Plus">R 0.00</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- ═══ END SECTION 3: Dashboard & Reconciliation ═══ -->
 
             </div>
             <!-- ═══ END REMITTANCE IMPORT PANEL ═══ -->
