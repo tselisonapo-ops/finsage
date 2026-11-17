@@ -18223,33 +18223,6 @@ body{
             <div id="remittanceImportPanel" class="hidden space-y-4"
                  style="margin-bottom:16px;">
 
-              <!-- Marketplace Control Bar (Workflow, VAT Mode, Tabs) -->
-              <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:12px 16px; background:#f8fafc; border-radius:12px; border:1px solid #e2e8f0;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <label for="remitWorkflowMode" style="font-size:12px; font-weight:600; color:#475569;">Workflow:</label>
-                  <select id="remitWorkflowMode" style="padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px; background:#fff; font-weight:500; cursor:pointer;">
-                    <option value="matching" selected>Order Matching & Settle (New Flow)</option>
-                    <option value="direct_remit">Direct Remittance Posting (Legacy Flow)</option>
-                  </select>
-                </div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <label for="remitVatMode" style="font-size:12px; font-weight:600; color:#475569;">VAT Mode:</label>
-                  <select id="remitVatMode" style="padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px; background:#fff; font-weight:500; cursor:pointer;">
-                    <option value="standard" selected>Standard 15% (VAT Inclusive & Recoverable)</option>
-                    <option value="zero_rated">Zero-Rated (0% VAT)</option>
-                    <option value="non_recoverable">Exempt / Non-Recoverable Input VAT</option>
-                  </select>
-                </div>
-                <div style="margin-left:auto; display:flex; gap:8px;">
-                  <button type="button" id="remitTabUpload" class="cc-btn cc-btn--sm" style="font-size:11px; font-weight:600; background:#e0f2fe; color:#0369a1; border-color:#bae6fd;">Remittance Upload</button>
-                  <button type="button" id="remitTabOrders" class="cc-btn cc-btn--sm" style="font-size:11px; font-weight:600;">Marketplace Orders</button>
-                  <button type="button" id="remitTabRecon" class="cc-btn cc-btn--sm" style="font-size:11px; font-weight:600;">Dashboard & Aging</button>
-                </div>
-              </div>
-
-              <!-- SECTION 1: Upload, Preview, Results -->
-              <div id="remitUploadSection" class="space-y-4">
-
               <!-- Upload card -->
               <div class="cc-card" style="--i:0">
                 <div class="cc-card-head">
@@ -18265,11 +18238,11 @@ body{
                     </span>
                     <div class="cc-title-text">
                       <h3>Upload remittance advice</h3>
-                      <p>Drop a remittance PDF here, or click to browse.</p>
+                      <p>Drop a remittance PDF/file here to auto-post journals directly to General Ledger.</p>
                     </div>
                   </div>
                   <div class="flex items-center gap-2">
-                    <button id="remitPreviewBtn" class="cc-btn" disabled>
+                    <button id="jrnlRemitPreviewBtn" class="cc-btn" disabled>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
                            stroke-linejoin="round">
@@ -18278,7 +18251,7 @@ body{
                       </svg>
                       Preview journals
                     </button>
-                    <button id="remitPostBtn" class="cc-btn cc-btn--solid" disabled>
+                    <button id="jrnlRemitPostBtn" class="cc-btn cc-btn--solid" disabled>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
                            stroke-linejoin="round">
@@ -18290,13 +18263,13 @@ body{
                 </div>
 
                 <div class="cc-card-body">
-                  <div id="remitDropZone"
+                  <div id="jrnlRemitDropZone"
                        class="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors"
                        style="border-color:#cbd5e1;">
-                    <input type="file" id="remitFileInput"
+                    <input type="file" id="jrnlRemitFileInput"
                            accept=".pdf,.txt" class="hidden">
-                    <div id="remitDropIcon" class="text-4xl mb-2">📄</div>
-                    <p id="remitDropLabel" class="text-sm text-slate-600">
+                    <div id="jrnlRemitDropIcon" class="text-4xl mb-2">📄</div>
+                    <p id="jrnlRemitDropLabel" class="text-sm text-slate-600">
                       Drop remittance PDF here or click to browse
                     </p>
                     <p class="text-xs text-slate-400 mt-1">
@@ -18304,328 +18277,196 @@ body{
                     </p>
                   </div>
 
-                  <div id="remitErrorBanner" class="hidden mt-4 p-3 rounded-lg"
+                  <div id="jrnlRemitErrorBanner" class="hidden mt-4 p-3 rounded-lg"
                        style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;">
-                    <span id="remitErrorText"></span>
+                    <span id="jrnlRemitErrorText"></span>
                   </div>
 
-                  <div id="remitLoading" class="hidden mt-4 flex items-center gap-3">
+                  <div id="jrnlRemitLoading" class="hidden mt-4 flex items-center gap-3">
                     <div class="w-5 h-5 border-2 rounded-full animate-spin"
                          style="border-color:#00C8C8;border-top-color:transparent;"></div>
-                    <span id="remitLoadingText" class="text-sm text-slate-600">
+                    <span class="text-sm text-slate-600">
                       Processing remittance...
                     </span>
                   </div>
-                </div>
-              </div>
 
-              <!-- Preview card -->
-              <div id="remitPreviewCard" class="cc-card hidden" style="--i:1">
-                <div class="cc-card-head">
-                  <div class="cc-card-title">
-                    <span class="cc-ico cc-ico--teal">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                           stroke-linejoin="round">
-                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-                      </svg>
-                    </span>
-                    <div class="cc-title-text">
-                      <h3>Remittance preview</h3>
-                      <p id="remitPreviewSubtitle">Parsed header and totals.</p>
-                    </div>
-                  </div>
-                  <span id="remitReconBadge" class="ckp-pill"></span>
-                </div>
-
-                <div class="cc-card-body">
-                  <div id="remitHeaderGrid"
-                       class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  <div id="jrnlRemitPreviewCard" class="hidden mt-4 p-4 rounded-xl border border-slate-200 bg-slate-50 text-sm">
+                    <div class="font-bold text-slate-800 mb-1">Journal Preview Summary</div>
+                    <div id="jrnlRemitPreviewSummary" class="text-slate-600"></div>
                   </div>
 
-                  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                    <div class="cc-mini">
-                      <div class="cc-mini-head">Total Sales (GMV)</div>
-                      <div class="cc-mini-body">
-                        <strong id="remitTotalSales" class="text-lg">—</strong>
-                      </div>
-                    </div>
-                    <div class="cc-mini">
-                      <div class="cc-mini-head">Commission</div>
-                      <div class="cc-mini-body">
-                        <strong id="remitTotalCommission" class="text-lg" style="color:#b45309;">—</strong>
-                      </div>
-                    </div>
-                    <div class="cc-mini">
-                      <div class="cc-mini-head">Transport</div>
-                      <div class="cc-mini-body">
-                        <strong id="remitTotalTransport" class="text-lg" style="color:#b45309;">—</strong>
-                      </div>
-                    </div>
-                    <div class="cc-mini" style="background:#ecfdf5;border-color:#a7f3d0;">
-                      <div class="cc-mini-head" style="color:#047857;">Net Payment</div>
-                      <div class="cc-mini-body">
-                        <strong id="remitTotalNet" class="text-xl" style="color:#047857;">—</strong>
-                      </div>
-                    </div>
+                  <div id="jrnlRemitResultsCard" class="hidden mt-4 p-4 rounded-xl border border-emerald-200 bg-emerald-50 text-sm">
+                    <div class="font-bold text-emerald-800 mb-1">Posting Complete ✓</div>
+                    <div id="jrnlRemitResultsSummary" class="text-emerald-700"></div>
                   </div>
 
-                  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                    <div class="cc-kv"><span>Sales lines</span><span class="cc-kv-val" id="remitSalesCount">—</span></div>
-                    <div class="cc-kv"><span>Return lines</span><span class="cc-kv-val" id="remitReturnCount">—</span></div>
-                    <div class="cc-kv"><span>Journals generated</span><span class="cc-kv-val" id="remitJournalCount">—</span></div>
-                    <div class="cc-kv"><span>Cross-check drift</span><span class="cc-kv-val" id="remitDrift">—</span></div>
-                  </div>
-
-                  <div id="remitSampleJournals" class="space-y-3"></div>
-                </div>
-              </div>
-
-              <!-- Results card -->
-              <div id="remitResultsCard" class="cc-card hidden" style="--i:2">
-                <div class="cc-card-head">
-                  <div class="cc-card-title">
-                    <span class="cc-ico">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                           stroke-linejoin="round">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                        <polyline points="22 4 12 14.01 9 11.01"/>
-                      </svg>
-                    </span>
-                    <div class="cc-title-text">
-                      <h3>Posting results</h3>
-                      <p id="remitResultsSubtitle">—</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="cc-card-body">
-                  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                    <div class="cc-kpi cc-kpi--np">
-                      <div class="cc-kpi-top"><span class="cc-kpi-label">Posted</span></div>
-                      <div class="cc-kpi-value" id="remitPostedCount">—</div>
-                    </div>
-                    <div class="cc-kpi cc-kpi--ap">
-                      <div class="cc-kpi-top"><span class="cc-kpi-label">Failed</span></div>
-                      <div class="cc-kpi-value" id="remitFailedCount">—</div>
-                    </div>
-                    <div class="cc-kpi cc-kpi--cash">
-                      <div class="cc-kpi-top"><span class="cc-kpi-label">AR Control Balance</span></div>
-                      <div class="cc-kpi-value" id="remitArBalance">—</div>
-                    </div>
-                    <div class="cc-kpi cc-kpi--vat">
-                      <div class="cc-kpi-top"><span class="cc-kpi-label">Net Payment</span></div>
-                      <div class="cc-kpi-value" id="remitNetPayment">—</div>
-                    </div>
-                  </div>
-
-                  <div id="remitFailedDetails" class="hidden">
-                    <div class="cc-kpi-label mb-2" style="color:#b91c1c;">Failed journals</div>
-                    <div id="remitFailedList" class="space-y-2"></div>
-                  </div>
-
-                  <div id="remitSuccessMsg" class="hidden p-4 rounded-lg"
-                       style="background:#ecfdf5;border:1px solid #a7f3d0;">
-                    <span style="color:#047857;font-weight:700;">
-                      All journals posted successfully. AR control clears to zero.
-                    </span>
-                    <p id="remitSuccessSummary" class="text-sm mt-2" style="color:#065f46;"></p>
+                  <div class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <span>Looking for order matching, settlement, or marketplace aging?</span>
+                    <button type="button" onclick="window.switchScreen('marketplace')" class="text-teal-600 font-semibold hover:underline">
+                      Go to Marketplace Manager →
+                    </button>
                   </div>
                 </div>
               </div>
-
-              </div>
-              <!-- ═══ END SECTION 1: Upload ═══ -->
-
-              <!-- SECTION 2: Marketplace Orders -->
-              <div id="remitOrdersSection" class="hidden space-y-4">
-                <div class="cc-card">
-                  <div class="cc-card-head">
-                    <div class="cc-card-title">
-                      <span class="cc-ico">
-                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-                             stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                             stroke-linejoin="round">
-                          <path d="m7.5 4.27 9 5.15"/>
-                          <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
-                          <path d="m3.3 7 8.7 5 8.7-5"/>
-                          <path d="M12 22V12"/>
-                        </svg>
-                      </span>
-                      <div class="cc-title-text">
-                        <h3>Marketplace Orders</h3>
-                        <p>Track order sales, inventory FIFO consumption, and settlement state.</p>
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <select id="mktOrderStatusFilter" style="padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px; background:#fff;">
-                        <option value="">All Statuses</option>
-                        <option value="imported">Imported (Unposted)</option>
-                        <option value="posted">Posted to GL</option>
-                        <option value="settled">Settled</option>
-                        <option value="cancelled">Cancelled</option>
-                      </select>
-                      <button type="button" id="mktOrdersRefreshBtn" class="cc-btn cc-btn--sm">↻ Refresh</button>
-                    </div>
-                  </div>
-                  <div class="cc-card-body">
-                    <div style="overflow-x:auto;">
-                      <table class="w-full text-left" style="font-size:12px; border-collapse:collapse;">
-                        <thead>
-                          <tr style="border-bottom:1px solid #e2e8f0; color:#64748b; font-size:11px; text-transform:uppercase;">
-                            <th style="padding:8px;">Order Ref</th>
-                            <th style="padding:8px;">Date</th>
-                            <th style="padding:8px;">Status</th>
-                            <th style="padding:8px; text-align:right;">Gross</th>
-                            <th style="padding:8px; text-align:right;">Net</th>
-                            <th style="padding:8px; text-align:right;">VAT</th>
-                            <th style="padding:8px; text-align:right;">FIFO Cost</th>
-                            <th style="padding:8px;">Journal</th>
-                            <th style="padding:8px; text-align:center;">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody id="mktOrdersTableBody">
-                          <tr><td colspan="9" style="text-align:center; padding:16px; color:#94a3b8;">Switch to this tab or click Refresh to load marketplace orders.</td></tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <!-- ═══ END SECTION 2: Marketplace Orders ═══ -->
-
-              <!-- SECTION 3: Dashboard & Reconciliation -->
-              <div id="remitDashboardSection" class="hidden space-y-4">
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div class="cc-kpi cc-kpi--cash">
-                    <div class="cc-kpi-top"><span class="cc-kpi-label">Marketplace Gross Sales</span></div>
-                    <div class="cc-kpi-value" id="mktKpiGrossSales">R 0.00</div>
-                  </div>
-                  <div class="cc-kpi cc-kpi--ap">
-                    <div class="cc-kpi-top"><span class="cc-kpi-label">Marketplace Fees</span></div>
-                    <div class="cc-kpi-value" id="mktKpiFees" style="color:#b45309;">R 0.00</div>
-                  </div>
-                  <div class="cc-kpi cc-kpi--np">
-                    <div class="cc-kpi-top"><span class="cc-kpi-label">Actual Settlements</span></div>
-                    <div class="cc-kpi-value" id="mktKpiSettlements" style="color:#047857;">R 0.00</div>
-                  </div>
-                  <div class="cc-kpi cc-kpi--vat">
-                    <div class="cc-kpi-top"><span class="cc-kpi-label">Subledger AR Balance</span></div>
-                    <div class="cc-kpi-value" id="mktKpiSubledgerAr">R 0.00</div>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <!-- Reconciliation Card -->
-                  <div class="cc-card">
-                    <div class="cc-card-head">
-                      <div class="cc-card-title">
-                        <span class="cc-ico cc-ico--teal">
-                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-                               stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                               stroke-linejoin="round">
-                            <line x1="18" y1="20" x2="18" y2="10"/>
-                            <line x1="12" y1="20" x2="12" y2="4"/>
-                            <line x1="6" y1="20" x2="6" y2="14"/>
-                          </svg>
-                        </span>
-                        <div class="cc-title-text">
-                          <h3>GL Control Account Reconciliation</h3>
-                          <p>Verifying Subledger vs Account BS_CA_9002</p>
-                        </div>
-                      </div>
-                      <span id="mktReconBadge" class="ckp-pill ckp-pill--ok">Reconciled</span>
-                    </div>
-                    <div class="cc-card-body space-y-2">
-                      <div class="cc-kv"><span>Subledger Expected Balance</span><span class="cc-kv-val" id="mktReconSubledgerVal">—</span></div>
-                      <div class="cc-kv"><span>GL Control Account Balance (Marketplace)</span><span class="cc-kv-val" id="mktReconGlVal">—</span></div>
-                      <div class="cc-kv"><span>Discrepancy / Variance</span><span class="cc-kv-val" id="mktReconDiffVal" style="font-weight:700;">—</span></div>
-                      <div class="cc-kv"><span>Orders Settled vs Total</span><span class="cc-kv-val" id="mktOrdersCountRatio">—</span></div>
-                    </div>
-                  </div>
-
-                  <!-- Aging Card -->
-                  <div class="cc-card">
-                    <div class="cc-card-head">
-                      <div class="cc-card-title">
-                        <span class="cc-ico">
-                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-                               stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                               stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10"/>
-                            <polyline points="12 6 12 12 16 14"/>
-                          </svg>
-                        </span>
-                        <div class="cc-title-text">
-                          <h3>Unsettled Receivables Aging</h3>
-                          <p>Aging analysis of outstanding marketplace sales</p>
-                        </div>
-                      </div>
-                      <button type="button" id="mktReconRefreshBtn" class="cc-btn cc-btn--sm">↻ Refresh</button>
-                    </div>
-                    <div class="cc-card-body">
-                      <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
-                        <div class="p-3 rounded-lg" style="background:#f8fafc; border:1px solid #e2e8f0;">
-                          <div class="text-xs text-slate-500 font-medium">0 - 30 Days</div>
-                          <div class="text-sm font-bold text-slate-800 mt-1" id="mktAging0_30">R 0.00</div>
-                        </div>
-                        <div class="p-3 rounded-lg" style="background:#f8fafc; border:1px solid #e2e8f0;">
-                          <div class="text-xs text-slate-500 font-medium">31 - 60 Days</div>
-                          <div class="text-sm font-bold text-amber-600 mt-1" id="mktAging31_60">R 0.00</div>
-                        </div>
-                        <div class="p-3 rounded-lg" style="background:#f8fafc; border:1px solid #e2e8f0;">
-                          <div class="text-xs text-slate-500 font-medium">61 - 90 Days</div>
-                          <div class="text-sm font-bold text-orange-600 mt-1" id="mktAging61_90">R 0.00</div>
-                        </div>
-                        <div class="p-3 rounded-lg" style="background:#f8fafc; border:1px solid #e2e8f0;">
-                          <div class="text-xs text-slate-500 font-medium">90+ Days</div>
-                          <div class="text-sm font-bold text-rose-600 mt-1" id="mktAging90Plus">R 0.00</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <!-- ═══ END SECTION 3: Dashboard & Reconciliation ═══ -->
 
             </div>
             <!-- ═══ END REMITTANCE IMPORT PANEL ═══ -->
 
-            <!-- Inline fallback: checkbox show/hide works even if makro_screen.js hasn't loaded yet -->
+            <!-- Self-contained script for Journal screen upload (independent of makro_screen.js) -->
             <script>
             (function(){
-              function initRemittanceToggle(){
-                var toggle=document.getElementById('remittanceImportToggle');
-                var panel=document.getElementById('remittanceImportPanel');
-                var label=document.getElementById('remittanceImportToggleLabel');
-                if(!toggle||!panel) return false;
+              function initJournalRemittance(){
+                var toggle = document.getElementById('remittanceImportToggle');
+                var panel = document.getElementById('remittanceImportPanel');
+                var label = document.getElementById('remittanceImportToggleLabel');
+                if(!toggle || !panel) return false;
                 if(toggle.dataset.bound) return true;
-                toggle.dataset.bound='1';
-                toggle.addEventListener('change',function(){
+                toggle.dataset.bound = '1';
+
+                toggle.addEventListener('change', function(){
                   if(toggle.checked){
                     panel.classList.remove('hidden');
-                    if(label){label.style.borderColor='rgba(0,200,200,0.5)';label.style.background='rgba(0,200,200,0.06)';label.style.color='#00284F';}
-                  }else{
+                    if(label){
+                      label.style.borderColor = 'rgba(0,200,200,0.5)';
+                      label.style.background = 'rgba(0,200,200,0.06)';
+                      label.style.color = '#00284F';
+                    }
+                  } else {
                     panel.classList.add('hidden');
-                    if(label){label.style.borderColor='rgba(15,23,42,.12)';label.style.background='#fff';label.style.color='#334155';}
+                    if(label){
+                      label.style.borderColor = 'rgba(15,23,42,.12)';
+                      label.style.background = '#fff';
+                      label.style.color = '#334155';
+                    }
                   }
                 });
+
+                var dropZone = document.getElementById('jrnlRemitDropZone');
+                var fileInput = document.getElementById('jrnlRemitFileInput');
+                var dropLabel = document.getElementById('jrnlRemitDropLabel');
+                var previewBtn = document.getElementById('jrnlRemitPreviewBtn');
+                var postBtn = document.getElementById('jrnlRemitPostBtn');
+                var errorBanner = document.getElementById('jrnlRemitErrorBanner');
+                var errorText = document.getElementById('jrnlRemitErrorText');
+                var loading = document.getElementById('jrnlRemitLoading');
+                var previewCard = document.getElementById('jrnlRemitPreviewCard');
+                var resultsCard = document.getElementById('jrnlRemitResultsCard');
+                var selectedFile = null;
+
+                function getCid(){
+                  return (typeof getActiveCompanyId === 'function' ? getActiveCompanyId() : null) || window.CURRENT_COMPANY_ID || 1;
+                }
+
+                function onSelect(file){
+                  if(!file) return;
+                  selectedFile = file;
+                  if(dropLabel) dropLabel.textContent = file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
+                  if(previewBtn) previewBtn.disabled = false;
+                  if(postBtn) postBtn.disabled = true;
+                  if(errorBanner) errorBanner.classList.add('hidden');
+                  if(previewCard) previewCard.classList.add('hidden');
+                  if(resultsCard) resultsCard.classList.add('hidden');
+                }
+
+                if(dropZone && fileInput){
+                  dropZone.addEventListener('click', function(){ fileInput.click(); });
+                  fileInput.addEventListener('change', function(e){
+                    if(e.target.files && e.target.files[0]) onSelect(e.target.files[0]);
+                  });
+                  dropZone.addEventListener('dragover', function(e){
+                    e.preventDefault();
+                    dropZone.style.borderColor = '#00C8C8';
+                  });
+                  dropZone.addEventListener('dragleave', function(){
+                    dropZone.style.borderColor = '#cbd5e1';
+                  });
+                  dropZone.addEventListener('drop', function(e){
+                    e.preventDefault();
+                    dropZone.style.borderColor = '#cbd5e1';
+                    if(e.dataTransfer.files && e.dataTransfer.files[0]) onSelect(e.dataTransfer.files[0]);
+                  });
+                }
+
+                async function submitLegacy(dryRun){
+                  if(!selectedFile) return;
+                  var cid = getCid();
+                  if(!cid){
+                    if(errorText) errorText.textContent = 'No company selected.';
+                    if(errorBanner) errorBanner.classList.remove('hidden');
+                    return;
+                  }
+                  if(errorBanner) errorBanner.classList.add('hidden');
+                  if(loading) loading.classList.remove('hidden');
+
+                  var fd = new FormData();
+                  fd.append('file', selectedFile);
+                  fd.append('dry_run', dryRun ? 'true' : 'false');
+
+                  try {
+                    var res = await fetch('/api/companies/' + cid + '/makro/remittance/upload', {
+                      method: 'POST',
+                      body: fd,
+                      credentials: 'include'
+                    });
+                    var data = await res.json();
+                    if(loading) loading.classList.add('hidden');
+
+                    if(!res.ok || data.error){
+                      if(errorText) errorText.textContent = data.error || 'Server error';
+                      if(errorBanner) errorBanner.classList.remove('hidden');
+                      return;
+                    }
+
+                    if(dryRun){
+                      if(previewCard){
+                        previewCard.classList.remove('hidden');
+                        var txt = document.getElementById('jrnlRemitPreviewSummary');
+                        if(txt){
+                          var sum = data.summary || {};
+                          var cnt = data.counts || {};
+                          txt.textContent = 'Parsed ' + (cnt.journals_count || data.journals_count || 0) + ' journals. Total sales: R ' + ((sum.total_sales != null ? sum.total_sales : data.total_sales) || 0).toLocaleString() + ', Fees: R ' + ((sum.total_commission != null ? sum.total_commission : data.total_commission) || 0).toLocaleString() + ', Net: R ' + ((sum.total_net != null ? sum.total_net : data.total_net) || 0).toLocaleString();
+                        }
+                      }
+                      if(postBtn) postBtn.disabled = false;
+                    } else {
+                      if(resultsCard){
+                        resultsCard.classList.remove('hidden');
+                        var resTxt = document.getElementById('jrnlRemitResultsSummary');
+                        if(resTxt){
+                          resTxt.textContent = 'Successfully posted ' + (data.posted || data.journals_posted || 0) + ' journal(s) to General Ledger. AR Control clears to zero.';
+                        }
+                      }
+                      if(postBtn) postBtn.disabled = true;
+                      if(previewBtn) previewBtn.disabled = true;
+                    }
+                  } catch(err){
+                    if(loading) loading.classList.add('hidden');
+                    if(errorText) errorText.textContent = err.message || 'Network error';
+                    if(errorBanner) errorBanner.classList.remove('hidden');
+                  }
+                }
+
+                if(previewBtn) previewBtn.addEventListener('click', function(){ submitLegacy(true); });
+                if(postBtn) postBtn.addEventListener('click', function(){
+                  if(confirm('Post all remittance journals to the General Ledger?')) submitLegacy(false);
+                });
+
                 return true;
               }
-              if(!initRemittanceToggle()){
-                // Retry when journal screen becomes active
-                var obs=new MutationObserver(function(){
-                  var s=document.getElementById('screen-journal');
-                  if(s&&s.classList.contains('active')){initRemittanceToggle();}
+
+              if(!initJournalRemittance()){
+                var obs = new MutationObserver(function(){
+                  var s = document.getElementById('screen-journal');
+                  if(s && s.classList.contains('active')){
+                    if(initJournalRemittance()) obs.disconnect();
+                  }
                 });
-                var host=document.getElementById('screensHost');
-                if(host)obs.observe(host,{subtree:true,attributes:true,attributeFilter:['class']});
+                var host = document.getElementById('screensHost') || document.body;
+                if(host) obs.observe(host, { subtree: true, attributes: true, attributeFilter: ['class'] });
               }
             })();
             </script>
-            <!-- End inline fallback -->
+            <!-- End self-contained script for Journal screen upload -->
 
             <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start w-full">
 
@@ -19137,6 +18978,390 @@ body{
           });
         })();
         </script>
+
+
+        <!-- ═══════════════════════════════════════════════════════════
+             MARKETPLACE SCREEN — Makro Marketplace Manager
+        ════════════════════════════════════════════════════════════ -->
+        <section id="screen-marketplace" class="screen hidden">
+          <div class="w-full flex flex-col gap-4">
+
+            <!-- ── Screen intro ─────────────────────────────────────────── -->
+            <div class="jv2-intro">
+              <div>
+                <span class="cc-eyebrow">Marketplace · Makro</span>
+                <h1 class="cc-h1">Marketplace Manager</h1>
+                <p class="cc-sub">Upload remittance advice, reconcile Makro orders, and monitor AR aging for marketplace settlements.</p>
+              </div>
+              <div class="jv2-intro-right">
+                <span class="cc-datechip">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  <span>Makro Settlement</span>
+                </span>
+              </div>
+            </div>
+
+            <!-- Marketplace Control Bar (Workflow, VAT Mode, Tabs) -->
+            <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:12px 16px; background:#f8fafc; border-radius:12px; border:1px solid #e2e8f0;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <label for="remitWorkflowMode" style="font-size:12px; font-weight:600; color:#475569;">Workflow:</label>
+                <select id="remitWorkflowMode" style="padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px; background:#fff; font-weight:500; cursor:pointer;">
+                  <option value="matching" selected>Order Matching & Settle (New Flow)</option>
+                  <option value="direct_remit">Direct Remittance Posting (Legacy Flow)</option>
+                </select>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <label for="remitVatMode" style="font-size:12px; font-weight:600; color:#475569;">VAT Mode:</label>
+                <select id="remitVatMode" style="padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px; background:#fff; font-weight:500; cursor:pointer;">
+                  <option value="standard" selected>Standard 15% (VAT Inclusive & Recoverable)</option>
+                  <option value="zero_rated">Zero-Rated (0% VAT)</option>
+                  <option value="non_recoverable">Exempt / Non-Recoverable Input VAT</option>
+                </select>
+              </div>
+              <div style="margin-left:auto; display:flex; gap:8px;">
+                <button type="button" id="remitTabUpload" class="cc-btn cc-btn--sm" style="font-size:11px; font-weight:600; background:#e0f2fe; color:#0369a1; border-color:#bae6fd;">Remittance Upload</button>
+                <button type="button" id="remitTabOrders" class="cc-btn cc-btn--sm" style="font-size:11px; font-weight:600;">Marketplace Orders</button>
+                <button type="button" id="remitTabRecon" class="cc-btn cc-btn--sm" style="font-size:11px; font-weight:600;">Dashboard & Aging</button>
+              </div>
+            </div>
+
+            <!-- SECTION 1: Upload, Preview, Results -->
+            <div id="remitUploadSection" class="space-y-4">
+
+              <!-- Upload card -->
+              <div class="cc-card" style="--i:0">
+                <div class="cc-card-head">
+                  <div class="cc-card-title">
+                    <span class="cc-ico">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                           stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                      </svg>
+                    </span>
+                    <div class="cc-title-text">
+                      <h3>Upload remittance advice</h3>
+                      <p>Drop a remittance PDF here, or click to browse.</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button id="remitPreviewBtn" class="cc-btn" disabled>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                           stroke-linejoin="round">
+                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                      </svg>
+                      Preview journals
+                    </button>
+                    <button id="remitPostBtn" class="cc-btn cc-btn--solid" disabled>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                           stroke-linejoin="round">
+                        <path d="M5 12h14"/><path d="M12 5v14"/>
+                      </svg>
+                      Post journals
+                    </button>
+                  </div>
+                </div>
+
+                <div class="cc-card-body">
+                  <div id="remitDropZone"
+                       class="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors"
+                       style="border-color:#cbd5e1;">
+                    <input type="file" id="remitFileInput"
+                           accept=".pdf,.txt" class="hidden">
+                    <div id="remitDropIcon" class="text-4xl mb-2">📄</div>
+                    <p id="remitDropLabel" class="text-sm text-slate-600">
+                      Drop remittance PDF here or click to browse
+                    </p>
+                    <p class="text-xs text-slate-400 mt-1">
+                      Accepted: .pdf, .txt — Max size: 10 MB
+                    </p>
+                  </div>
+
+                  <div id="remitErrorBanner" class="hidden mt-4 p-3 rounded-lg"
+                       style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;">
+                    <span id="remitErrorText"></span>
+                  </div>
+
+                  <div id="remitLoading" class="hidden mt-4 flex items-center gap-3">
+                    <div class="w-5 h-5 border-2 rounded-full animate-spin"
+                         style="border-color:#00C8C8;border-top-color:transparent;"></div>
+                    <span id="remitLoadingText" class="text-sm text-slate-600">
+                      Processing remittance...
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Preview card -->
+              <div id="remitPreviewCard" class="cc-card hidden" style="--i:1">
+                <div class="cc-card-head">
+                  <div class="cc-card-title">
+                    <span class="cc-ico cc-ico--teal">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                           stroke-linejoin="round">
+                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                      </svg>
+                    </span>
+                    <div class="cc-title-text">
+                      <h3>Journal preview</h3>
+                      <p id="remitPreviewSubtitle">—</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="cc-card-body">
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    <div class="cc-kpi cc-kpi--np">
+                      <div class="cc-kpi-top"><span class="cc-kpi-label">Total Sales</span></div>
+                      <strong id="remitTotalSales" class="text-xl" style="color:#0369a1;">—</strong>
+                    </div>
+                    <div class="cc-kpi cc-kpi--ap">
+                      <div class="cc-kpi-top"><span class="cc-kpi-label">Total Returns</span></div>
+                      <strong id="remitTotalReturns" class="text-xl" style="color:#b91c1c;">—</strong>
+                    </div>
+                    <div class="cc-kpi cc-kpi--vat">
+                      <div class="cc-kpi-top"><span class="cc-kpi-label">Total Fees</span></div>
+                      <strong id="remitTotalFees" class="text-xl" style="color:#7c3aed;">—</strong>
+                    </div>
+                    <div class="cc-kpi cc-kpi--cash">
+                      <div class="cc-kpi-top"><span class="cc-kpi-label">Net Settlement</span></div>
+                      <strong id="remitTotalNet" class="text-xl" style="color:#047857;">—</strong>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    <div class="cc-kv"><span>Sales lines</span><span class="cc-kv-val" id="remitSalesCount">—</span></div>
+                    <div class="cc-kv"><span>Return lines</span><span class="cc-kv-val" id="remitReturnCount">—</span></div>
+                    <div class="cc-kv"><span>Journals generated</span><span class="cc-kv-val" id="remitJournalCount">—</span></div>
+                    <div class="cc-kv"><span>Cross-check drift</span><span class="cc-kv-val" id="remitDrift">—</span></div>
+                  </div>
+
+                  <div id="remitSampleJournals" class="space-y-3"></div>
+                </div>
+              </div>
+
+              <!-- Results card -->
+              <div id="remitResultsCard" class="cc-card hidden" style="--i:2">
+                <div class="cc-card-head">
+                  <div class="cc-card-title">
+                    <span class="cc-ico">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                           stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                      </svg>
+                    </span>
+                    <div class="cc-title-text">
+                      <h3>Posting results</h3>
+                      <p id="remitResultsSubtitle">—</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="cc-card-body">
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    <div class="cc-kpi cc-kpi--np">
+                      <div class="cc-kpi-top"><span class="cc-kpi-label">Posted</span></div>
+                      <div class="cc-kpi-value" id="remitPostedCount">—</div>
+                    </div>
+                    <div class="cc-kpi cc-kpi--ap">
+                      <div class="cc-kpi-top"><span class="cc-kpi-label">Failed</span></div>
+                      <div class="cc-kpi-value" id="remitFailedCount">—</div>
+                    </div>
+                    <div class="cc-kpi cc-kpi--cash">
+                      <div class="cc-kpi-top"><span class="cc-kpi-label">AR Control Balance</span></div>
+                      <div class="cc-kpi-value" id="remitArBalance">—</div>
+                    </div>
+                    <div class="cc-kpi cc-kpi--vat">
+                      <div class="cc-kpi-top"><span class="cc-kpi-label">Net Payment</span></div>
+                      <div class="cc-kpi-value" id="remitNetPayment">—</div>
+                    </div>
+                  </div>
+
+                  <div id="remitFailedDetails" class="hidden">
+                    <div class="cc-kpi-label mb-2" style="color:#b91c1c;">Failed journals</div>
+                    <div id="remitFailedList" class="space-y-2"></div>
+                  </div>
+
+                  <div id="remitSuccessMsg" class="hidden p-4 rounded-lg"
+                       style="background:#ecfdf5;border:1px solid #a7f3d0;">
+                    <span style="color:#047857;font-weight:700;">
+                      All journals posted successfully. AR control clears to zero.
+                    </span>
+                    <p id="remitSuccessSummary" class="text-sm mt-2" style="color:#065f46;"></p>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+            <!-- ═══ END SECTION 1: Upload ═══ -->
+
+            <!-- SECTION 2: Marketplace Orders -->
+            <div id="remitOrdersSection" class="hidden space-y-4">
+              <div class="cc-card">
+                <div class="cc-card-head">
+                  <div class="cc-card-title">
+                    <span class="cc-ico">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                           stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                           stroke-linejoin="round">
+                        <path d="m7.5 4.27 9 5.15"/>
+                        <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                        <path d="m3.3 7 8.7 5 8.7-5"/>
+                        <path d="M12 22V12"/>
+                      </svg>
+                    </span>
+                    <div class="cc-title-text">
+                      <h3>Marketplace Orders</h3>
+                      <p>Track order sales, inventory FIFO consumption, and settlement state.</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <select id="mktOrderStatusFilter" style="padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px; background:#fff;">
+                      <option value="">All Statuses</option>
+                      <option value="imported">Imported (Unposted)</option>
+                      <option value="posted">Posted to GL</option>
+                      <option value="settled">Settled</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                    <button type="button" id="mktOrdersRefreshBtn" class="cc-btn cc-btn--sm">
+                      ↻ Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div class="cc-card-body">
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-left" style="font-size:12px; border-collapse:collapse;">
+                      <thead>
+                        <tr style="border-bottom:2px solid #e2e8f0; color:#475569; font-size:11px; text-transform:uppercase;">
+                          <th style="padding:8px;">Order Ref</th>
+                          <th style="padding:8px;">Date</th>
+                          <th style="padding:8px;">Status</th>
+                          <th style="padding:8px; text-align:right;">Gross</th>
+                          <th style="padding:8px; text-align:right;">Net</th>
+                          <th style="padding:8px; text-align:right;">VAT</th>
+                          <th style="padding:8px; text-align:right;">Cost</th>
+                          <th style="padding:8px;">Journal</th>
+                          <th style="padding:8px; text-align:center;">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody id="mktOrdersTableBody">
+                        <tr><td colspan="9" style="text-align:center; padding:16px; color:#94a3b8;">No marketplace orders loaded yet.</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- ═══ END SECTION 2: Marketplace Orders ═══ -->
+
+            <!-- SECTION 3: Dashboard & Reconciliation -->
+            <div id="remitDashboardSection" class="hidden space-y-4">
+              <!-- KPI Row -->
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div class="cc-kpi cc-kpi--np">
+                  <div class="cc-kpi-top"><span class="cc-kpi-label">Gross Marketplace Sales</span></div>
+                  <div class="cc-kpi-value" id="mktKpiGrossSales">R 0.00</div>
+                </div>
+                <div class="cc-kpi cc-kpi--ap">
+                  <div class="cc-kpi-top"><span class="cc-kpi-label">Marketplace Fees Accrued</span></div>
+                  <div class="cc-kpi-value" id="mktKpiFees">R 0.00</div>
+                </div>
+                <div class="cc-kpi cc-kpi--cash">
+                  <div class="cc-kpi-top"><span class="cc-kpi-label">Settlements Received</span></div>
+                  <div class="cc-kpi-value" id="mktKpiSettlements">R 0.00</div>
+                </div>
+                <div class="cc-kpi cc-kpi--vat">
+                  <div class="cc-kpi-top"><span class="cc-kpi-label">Subledger AR Balance</span></div>
+                  <div class="cc-kpi-value" id="mktKpiSubledgerAr">R 0.00</div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Reconciliation Card -->
+                <div class="cc-card">
+                  <div class="cc-card-head">
+                    <div class="cc-card-title">
+                      <span class="cc-ico cc-ico--teal">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                             stroke-linejoin="round">
+                          <line x1="18" y1="20" x2="18" y2="10"/>
+                          <line x1="12" y1="20" x2="12" y2="4"/>
+                          <line x1="6" y1="20" x2="6" y2="14"/>
+                        </svg>
+                      </span>
+                      <div class="cc-title-text">
+                        <h3>GL Control Account Reconciliation</h3>
+                        <p>Verifying Subledger vs Account BS_CA_9002</p>
+                      </div>
+                    </div>
+                    <span id="mktReconBadge" class="ckp-pill ckp-pill--ok">Reconciled</span>
+                  </div>
+                  <div class="cc-card-body space-y-2">
+                    <div class="cc-kv"><span>Subledger Expected Balance</span><span class="cc-kv-val" id="mktReconSubledgerVal">—</span></div>
+                    <div class="cc-kv"><span>GL Control Account Balance (Marketplace)</span><span class="cc-kv-val" id="mktReconGlVal">—</span></div>
+                    <div class="cc-kv"><span>Discrepancy / Variance</span><span class="cc-kv-val" id="mktReconDiffVal" style="font-weight:700;">—</span></div>
+                    <div class="cc-kv"><span>Orders Settled vs Total</span><span class="cc-kv-val" id="mktOrdersCountRatio">—</span></div>
+                  </div>
+                </div>
+
+                <!-- Aging Card -->
+                <div class="cc-card">
+                  <div class="cc-card-head">
+                    <div class="cc-card-title">
+                      <span class="cc-ico">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                             stroke-linejoin="round">
+                          <circle cx="12" cy="12" r="10"/>
+                          <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                      </span>
+                      <div class="cc-title-text">
+                        <h3>Unsettled Receivables Aging</h3>
+                        <p>Aging analysis of outstanding marketplace sales</p>
+                      </div>
+                    </div>
+                    <button type="button" id="mktReconRefreshBtn" class="cc-btn cc-btn--sm">↻ Refresh</button>
+                  </div>
+                  <div class="cc-card-body">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
+                      <div class="p-3 rounded-lg" style="background:#f8fafc; border:1px solid #e2e8f0;">
+                        <div class="text-xs text-slate-500 font-medium">0 - 30 Days</div>
+                        <div class="text-sm font-bold text-slate-800 mt-1" id="mktAging0_30">R 0.00</div>
+                      </div>
+                      <div class="p-3 rounded-lg" style="background:#f8fafc; border:1px solid #e2e8f0;">
+                        <div class="text-xs text-slate-500 font-medium">31 - 60 Days</div>
+                        <div class="text-sm font-bold text-amber-600 mt-1" id="mktAging31_60">R 0.00</div>
+                      </div>
+                      <div class="p-3 rounded-lg" style="background:#f8fafc; border:1px solid #e2e8f0;">
+                        <div class="text-xs text-slate-500 font-medium">61 - 90 Days</div>
+                        <div class="text-sm font-bold text-orange-600 mt-1" id="mktAging61_90">R 0.00</div>
+                      </div>
+                      <div class="p-3 rounded-lg" style="background:#f8fafc; border:1px solid #e2e8f0;">
+                        <div class="text-xs text-slate-500 font-medium">90+ Days</div>
+                        <div class="text-sm font-bold text-rose-600 mt-1" id="mktAging90Plus">R 0.00</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- ═══ END SECTION 3: Dashboard & Reconciliation ═══ -->
+
+          </div>
+        </section>
+        <!-- ═══ END screen-marketplace ═══ -->
+
 
         <!-- Ledger -->
                 <section id="screen-ledger" class="screen">
@@ -40373,7 +40598,7 @@ body{
     loadScript("/js/data-migration.js");
 
     /* ═══ REMITTANCE IMPORT MODULE ═══ */
-    loadScript("/makro_screen.js?v=20261116d");
+    loadScript("/makro_screen.js?v=20261117b");
 </script>
 <!-- v3: demo inline PAYE validate bridge removed — the REAL engine is restored via /tax-filing-dashboard-integration.js?v=20260818a in the loader chain; it strips the inline onclick and binds the Validate button itself -->
 

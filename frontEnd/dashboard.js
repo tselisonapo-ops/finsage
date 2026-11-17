@@ -9802,6 +9802,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       minRole: "clerk",
       children: [
         { name: "Journal Desk", screen: "journal", icon: "📔", minRole: "clerk" },
+        { name: "Marketplace", screen: "marketplace", icon: "🏪", minRole: "clerk", permissionAny: ["can_post_journals", "can_manage_ar"] },
 
         {
           name: "IFRS 16",
@@ -11933,6 +11934,7 @@ const SCREEN_POLICY = {
 
   // Transactions
   journal: { auth: "private", minRole: "clerk", permission: "can_post_journals" },
+  marketplace: { auth: "private", minRole: "clerk", permissionAny: ["can_post_journals", "can_manage_ar"] },
   "journal-reversal": { auth: "private", minRole: "assistant", permission: "can_post_journals" },
   "lease-center":   { auth: "private", minRole: "assistant", permissionAny: ["can_prepare_financials", "can_post_journals"] },
   "lease-payments": { auth: "private", minRole: "assistant", permission: "can_post_journals" },

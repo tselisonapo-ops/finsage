@@ -1,9 +1,8 @@
 /**
- * Remittance Import & Marketplace Manager — Frontend Logic
- * =========================================================
+ * Marketplace Manager — Frontend Logic
+ * =====================================
  *
- * Sits inside the Journal screen (#screen-journal).
- * Activated when "Remittance Import" checkbox is checked.
+ * Drives the dedicated Marketplace screen (#screen-marketplace).
  *
  * Features:
  *  - Order Matching & Settlement workflow (Phase 1-6 specification)
@@ -123,36 +122,11 @@
   // ----------------------------------------------------------------- init
 
   function tryInit() {
+    var screen = $("screen-marketplace");
+    if (!screen) return; // Screen not yet in DOM
+
     if (bound) return;
-    var toggle = $("remittanceImportToggle");
-    if (!toggle) return;   // checkbox not in DOM yet
-
     bound = true;
-
-    // ── Checkbox toggle ──
-    toggle.addEventListener("change", function () {
-      var panel = $("remittanceImportPanel");
-      if (!panel) return;
-
-      if (toggle.checked) {
-        show(panel);
-        var label = $("remittanceImportToggleLabel");
-        if (label) {
-          label.style.borderColor = "rgba(0,200,200,0.5)";
-          label.style.background = "rgba(0,200,200,0.06)";
-          label.style.color = "var(--fs-navy)";
-        }
-      } else {
-        hide(panel);
-        var label2 = $("remittanceImportToggleLabel");
-        if (label2) {
-          label2.style.borderColor = "rgba(15,23,42,.12)";
-          label2.style.background = "#fff";
-          label2.style.color = "#334155";
-        }
-        resetPanel();
-      }
-    });
 
     // ── Sub-navigation Tab Clicks ──
     var btnUpload = $("remitTabUpload");
@@ -273,6 +247,7 @@
     if (previewBtn) previewBtn.disabled = false;
     if (postBtn) postBtn.disabled = true;
 
+    // Reset preview/results
     hide($("remitPreviewCard"));
     hide($("remitResultsCard"));
   }
@@ -291,12 +266,12 @@
       return;
     }
 
-    var wf = $("remitWorkflowMode") ? $("remitWorkflowMode").value : "matching";
+    var workflowMode = $("remitWorkflowMode") ? $("remitWorkflowMode").value : "matching";
     var vatMode = $("remitVatMode") ? $("remitVatMode").value : "standard";
 
     setLoading(dryRun
-      ? "Parsing remittance advice (" + vatMode.toUpperCase() + " VAT mode)..."
-      : "Posting settlement journals and fees to GL...");
+      ? "Parsing remittance and calculating reconciliation preview..."
+      : "Posting settlements and fee deductions to the General Ledger...");
 
     var formData = new FormData();
     formData.append("file", uploadedFile);
@@ -308,25 +283,32 @@
         throw new Error("FinSage API client (window.apiFetch) is unavailable.");
       }
 
-      var url = wf === "matching"
-        ? "/api/companies/" + cid + "/marketplace/remittances/process"
-        : "/api/companies/" + cid + "/makro/remittance/upload";
+      if (workflowMode === "matching") {
+        // Phase 5 Matching flow
+        var url = "/api/companies/" + cid + "/marketplace/remittances/process";
+        var resp = await window.apiFetch(url, {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
 
-      var data = await window.apiFetch(url, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
-
-      if (wf === "matching") {
-        renderMatchingPreview(data, dryRun);
+        renderMatchingPreview(resp, dryRun);
         if (!dryRun) {
-          renderMatchingResults(data);
+          renderMatchingResults(resp);
         } else {
           var postBtn = $("remitPostBtn");
-          if (postBtn && data.ok) postBtn.disabled = false;
+          if (postBtn && resp.ok) postBtn.disabled = false;
         }
+
       } else {
+        // Legacy Direct Remittance posting flow
+        var legacyUrl = "/api/companies/" + cid + "/makro/remittance/upload";
+        var data = await window.apiFetch(legacyUrl, {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+
         renderLegacyPreview(data);
         if (!dryRun) {
           renderLegacyResults(data);
@@ -338,103 +320,71 @@
 
     } catch (err) {
       console.error("[MARKETPLACE REMITTANCE ERROR]", err);
-      showError((err && err.message) || "Network error while contacting the server.");
+      showError(
+        (err && err.message) ||
+        "Network error while contacting the server."
+      );
     } finally {
       setLoading(null);
     }
   }
 
-  // ----------------------------------------------------------------- Matching View Renderers
+  // ----------------------------------------------------------------- render: matching flow
 
   function renderMatchingPreview(resp, dryRun) {
     var card = $("remitPreviewCard");
     if (!card) return;
     show(card);
 
-    var res = resp.result || {};
-    var h = res.preview_header || {};
-
-    // Header info grid
-    var grid = $("remitHeaderGrid");
-    if (grid) {
-      var fields = [
-        ["Vendor", h.vendor_name || "Makro Vendor"],
-        ["Marketplace", h.marketplace_name || "Makro Marketplace"],
-        ["Payment Date", res.payment_date || h.payment_date],
-        ["Payment Reference", res.payment_reference_no || h.payment_reference_no],
-        ["VAT Treatment", (res.vat_mode || "standard").toUpperCase()],
-        ["Matching Mode", "Order Matching & Settle"],
-        ["Bank Account", h.bank_account_number || "Default Cash/Bank"],
-        ["Branch Code", h.branch_code || "000000"],
-      ];
-      grid.innerHTML = fields.map(function (f) {
-        return '<div class="cc-kv"><span>' + f[0] + '</span>' +
-          '<span class="cc-kv-val">' + (f[1] || "—") + '</span></div>';
-      }).join("");
+    var sub = $("remitPreviewSubtitle");
+    if (sub) {
+      sub.textContent = "Remittance Advice " + (resp.remittance_advice_number || "") +
+        " (Period " + (resp.period_start || "") + " to " + (resp.period_end || "") + ") — VAT Mode: " +
+        (resp.vat_mode || "standard").toUpperCase();
     }
 
-    // Totals
-    setText("remitTotalSales", fmtR(h.total_sales || 0));
-    setText("remitTotalCommission", fmtR(h.total_commission || 0));
-    setText("remitTotalTransport", fmtR(h.total_transport || 0));
-    setText("remitTotalNet", fmtR(res.total_net_payment || h.total_net_payment || 0));
+    var rec = resp.reconciliation || {};
+    var rem = resp.remittance || {};
 
-    // Line breakdown
-    setText("remitSalesCount", (res.matched_count || 0) + " matched");
-    setText("remitReturnCount", (res.unmatched_count || 0) + " unmatched");
-    setText("remitJournalCount", res.discrepancy_count || 0);
+    setText("remitTotalSales", fmtR(rem.gross_sales));
+    setText("remitTotalReturns", fmtR(rem.gross_returns));
+    setText("remitTotalFees", fmtR(rem.total_deductions));
+    setText("remitTotalNet", fmtR(rem.net_payment));
 
-    // Cross-check drift badge
-    var driftEl = $("remitDrift");
-    if (driftEl) {
-      var hasDiscrepancy = (res.discrepancy_count || 0) > 0;
-      driftEl.textContent = hasDiscrepancy ? (res.discrepancy_count + " variances") : "Zero drift ✓";
-      driftEl.style.color = hasDiscrepancy ? "#b91c1c" : "#047857";
-    }
+    setText("remitSalesCount", String(rem.total_orders || 0));
+    setText("remitReturnCount", String(rem.total_credit_notes || 0));
+    setText("remitJournalCount", String((resp.settlement_journal_id ? 1 : 0) + (resp.fee_journal_id ? 1 : 0) + (resp.cogs_journal_id ? 1 : 0)));
+    setText("remitDrift", fmtR(rec.variance || 0));
 
-    // Reconciliation badge
-    var reconBadge = $("remitReconBadge");
-    if (reconBadge) {
-      reconBadge.textContent = "Matching Validated ✓";
-      reconBadge.className = "ckp-pill ckp-pill--ok";
-    }
+    // Summary container
+    var container = $("remitSampleJournals");
+    if (container) {
+      var matchedCount = (resp.matched_orders && resp.matched_orders.length) || 0;
+      var unmatchedCount = (resp.unmatched_orders && resp.unmatched_orders.length) || 0;
 
-    // Subtitle
-    setText("remitPreviewSubtitle",
-      (res.total_lines || 0) + " remittance lines parsed. " +
-      (res.matched_count || 0) + " orders matched against marketplace orders subledger.");
+      var html = '<div class="space-y-2">';
+      html += '<div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">';
+      html += '<div style="font-weight:700; color:#0f172a; margin-bottom:6px;">Matching & Reconciliation Analysis</div>';
+      html += '<div style="display:flex; gap:16px; font-size:12px;">';
+      html += '<span>Matched Orders: <strong style="color:#047857;">' + matchedCount + '</strong></span>';
+      html += '<span>Unmatched: <strong style="color:#b91c1c;">' + unmatchedCount + '</strong></span>';
+      html += '<span>Settlement Variance: <strong>' + fmtR(rec.variance) + '</strong></span>';
+      html += '</div>';
+      html += '</div>';
 
-    // Sample Lines Table
-    var host = $("remitSampleJournals");
-    if (host && res.preview_lines && res.preview_lines.length > 0) {
-      var rowsHtml = res.preview_lines.map(function (pl) {
-        return '<tr style="border-bottom:1px solid #f1f5f9;">' +
-          '<td style="padding:4px 8px; font-weight:600;">' + pl.order_id + '</td>' +
-          '<td style="padding:4px 8px;">' + pl.date + '</td>' +
-          '<td style="padding:4px 8px; text-align:right;">' + fmtR(pl.gross) + '</td>' +
-          '<td style="padding:4px 8px; text-align:right; color:#b45309;">' + fmtR(pl.commission) + '</td>' +
-          '<td style="padding:4px 8px; text-align:right; color:#b45309;">' + fmtR(pl.transport) + '</td>' +
-          '<td style="padding:4px 8px; text-align:right; font-weight:600; color:#047857;">' + fmtR(pl.net_payment) + '</td>' +
-          '</tr>';
-      }).join("");
+      if (resp.settlement_journal_id) {
+        html += '<div style="font-size:12px; color:#0369a1; background:#e0f2fe; padding:8px 12px; border-radius:6px;">';
+        html += 'Settlement Journal Generated: <strong>#' + (resp.settlement_journal_ref || resp.settlement_journal_id) + '</strong>';
+        html += '</div>';
+      }
+      if (resp.fee_journal_id) {
+        html += '<div style="font-size:12px; color:#7c3aed; background:#ede9fe; padding:8px 12px; border-radius:6px;">';
+        html += 'Fee Deduction Journal Generated: <strong>#' + (resp.fee_journal_ref || resp.fee_journal_id) + '</strong>';
+        html += '</div>';
+      }
+      html += '</div>';
 
-      host.innerHTML =
-        '<div class="cc-mini">' +
-        '<div class="cc-mini-head">PARSED REMITTANCE LINES PREVIEW (FIRST ' + res.preview_lines.length + ' LINES)</div>' +
-        '<div class="cc-mini-body" style="padding:6px; overflow-x:auto;">' +
-        '<table style="width:100%; font-size:11px; border-collapse:collapse;">' +
-        '<thead><tr style="border-bottom:1px solid #e2e8f0; color:#64748b;">' +
-        '<th style="text-align:left; padding:4px 8px;">Order Ref</th>' +
-        '<th style="text-align:left; padding:4px 8px;">Date</th>' +
-        '<th style="text-align:right; padding:4px 8px;">Gross</th>' +
-        '<th style="text-align:right; padding:4px 8px;">Commission</th>' +
-        '<th style="text-align:right; padding:4px 8px;">Transport</th>' +
-        '<th style="text-align:right; padding:4px 8px;">Net Payment</th>' +
-        '</tr></thead>' +
-        '<tbody>' + rowsHtml + '</tbody>' +
-        '</table>' +
-        '</div>' +
-        '</div>';
+      container.innerHTML = html;
     }
   }
 
@@ -443,31 +393,30 @@
     if (!card) return;
     show(card);
 
-    var res = resp.result || {};
+    var rec = resp.reconciliation || {};
+    var rem = resp.remittance || {};
 
-    setText("remitPostedCount", res.matched_count || 0);
-    setText("remitFailedCount", res.discrepancy_count || 0);
-    setText("remitArBalance", res.settlement_journal_id ? ("Journal #" + res.settlement_journal_id) : "None");
-    setText("remitNetPayment", fmtR(res.total_net_payment || 0));
-
-    setText("remitResultsSubtitle",
-      "Settlement Ref: " + (res.payment_reference_no || "—") +
-      " • Status: " + (res.action || "settled").toUpperCase());
+    setText("remitPostedCount", String((resp.matched_orders && resp.matched_orders.length) || 0) + " orders");
+    setText("remitFailedCount", String((resp.unmatched_orders && resp.unmatched_orders.length) || 0) + " unmatched");
+    setText("remitArBalance", fmtR(rec.outstanding_receivable || 0));
+    setText("remitNetPayment", fmtR(rem.net_payment || 0));
 
     var successMsg = $("remitSuccessMsg");
-    var successSummary = $("remitSuccessSummary");
+    var summary = $("remitSuccessSummary");
+
     if (successMsg) {
       show(successMsg);
-      if (successSummary) {
-        successSummary.textContent =
-          "Remittance advice successfully settled. " +
-          (res.matched_count || 0) + " orders matched and allocated. " +
-          "Bank settlement journal #" + (res.settlement_journal_id || "—") + " posted.";
+      if (summary) {
+        summary.innerHTML =
+          "Remittance advice <strong>" + (resp.remittance_advice_number || "") + "</strong> processed successfully.<br>" +
+          "Settlement Journal: <strong>" + (resp.settlement_journal_ref || resp.settlement_journal_id || "None") + "</strong> | " +
+          "Fee Journal: <strong>" + (resp.fee_journal_ref || resp.fee_journal_id || "None") + "</strong> | " +
+          "VAT Mode applied: <strong>" + (resp.vat_mode || "standard").toUpperCase() + "</strong>.";
       }
     }
   }
 
-  // ----------------------------------------------------------------- Legacy Renderers
+  // ----------------------------------------------------------------- render: legacy flow
 
   function renderLegacyPreview(data) {
     var card = $("remitPreviewCard");
@@ -476,58 +425,62 @@
 
     var h = data.header_info || {};
 
-    var grid = $("remitHeaderGrid");
-    if (grid) {
-      var fields = [
-        ["Vendor", h.vendor_name],
-        ["Marketplace", h.marketplace_name],
-        ["Payment Date", h.payment_date],
-        ["Payment Reference", h.payment_reference_no],
-        ["Seller ID", h.seller_id],
-        ["Vendor SAP No", h.vendor_sap_no],
-        ["Bank Account", h.bank_account_number],
-        ["Branch Code", h.branch_code],
-      ];
-      grid.innerHTML = fields.map(function (f) {
-        return '<div class="cc-kv"><span>' + f[0] + '</span>' +
-          '<span class="cc-kv-val">' + (f[1] || "—") + '</span></div>';
-      }).join("");
+    var sub = $("remitPreviewSubtitle");
+    if (sub) {
+      sub.textContent =
+        "Remittance " + (h.advice_number || "—") +
+        " · " + (h.settlement_date || "—") +
+        " · Vendor " + (h.vendor_code || "—");
     }
 
-    setText("remitTotalSales", fmtR(h.total_sales));
-    setText("remitTotalCommission", fmtR(h.total_commission));
-    setText("remitTotalTransport", fmtR(h.total_transport));
-    setText("remitTotalNet", fmtR(h.total_net_payment));
+    var s = data.summary || {};
+    setText("remitTotalSales", fmtR(s.total_sales));
+    setText("remitTotalReturns", fmtR(s.total_returns));
+    setText("remitTotalFees", fmtR(s.total_commission));
+    setText("remitTotalNet", fmtR(s.total_net));
 
-    setText("remitSalesCount", data.sales_count || 0);
-    setText("remitReturnCount", data.return_count || 0);
-    setText("remitJournalCount", data.journal_count || 0);
+    var c = data.counts || {};
+    setText("remitSalesCount", c.sales_count ?? "—");
+    setText("remitReturnCount", c.returns_count ?? "—");
+    setText("remitJournalCount", c.journals_count ?? "—");
 
-    var driftEl = $("remitDrift");
-    var cross = data.totals_cross_check || {};
-    var drift = Math.abs((cross.gross_drift || 0) + (cross.net_drift || 0));
-    if (driftEl) {
-      driftEl.textContent = drift < 0.01 ? "R 0.00 ✓" : "R " + drift.toFixed(2);
-      driftEl.style.color = drift < 0.01 ? "#047857" : "#b91c1c";
+    var drift = data.drift_analysis || {};
+    var dVal = drift.drift;
+    var dEl = $("remitDrift");
+    if (dEl) {
+      dEl.textContent = fmtR(dVal);
+      dEl.style.color = (dVal === 0 || dVal === "0.00" || dVal === null) ? "#047857" : "#b91c1c";
     }
 
-    var reconBadge = $("remitReconBadge");
-    var recon = data.reconciliation || {};
-    if (reconBadge) {
-      if (recon.is_balanced) {
-        reconBadge.textContent = "AR clears ✓";
-        reconBadge.className = "ckp-pill ckp-pill--ok";
+    var sampleContainer = $("remitSampleJournals");
+    if (sampleContainer) {
+      var samples = data.sample_journals || [];
+      if (samples.length === 0) {
+        sampleContainer.innerHTML =
+          '<p class="text-xs text-slate-400">No journals generated.</p>';
       } else {
-        reconBadge.textContent = "AR NOT balanced";
-        reconBadge.className = "ckp-pill";
+        var html = '<div class="space-y-2">';
+        html += '<p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Sample generated journals</p>';
+        for (var i = 0; i < samples.length; i++) {
+          var j = samples[i];
+          var totalDr = 0;
+          for (var k = 0; k < (j.lines || []).length; k++) {
+            totalDr += Number(j.lines[k].debit) || 0;
+          }
+          html +=
+            '<div class="p-3 rounded-lg border border-slate-100 bg-slate-50 text-xs">' +
+              '<div class="flex items-center justify-between font-mono font-semibold text-slate-700">' +
+                '<span>' + (j.reference || "—") + '</span>' +
+                '<span class="text-teal-700">R ' + totalDr.toFixed(2) + '</span>' +
+              '</div>' +
+              '<p class="text-slate-500 mt-0.5">' + (j.narration || "—") + '</p>' +
+              '<div class="text-slate-400 mt-1">' + (j.lines ? j.lines.length : 0) + ' lines</div>' +
+            '</div>';
+        }
+        html += '</div>';
+        sampleContainer.innerHTML = html;
       }
     }
-
-    setText("remitPreviewSubtitle",
-      data.parsed_line_count + " lines parsed (" +
-      data.sales_count + " sales, " +
-      data.return_count + " returns) → " +
-      data.journal_count + " journals generated.");
   }
 
   function renderLegacyResults(data) {
@@ -535,18 +488,35 @@
     if (!card) return;
     show(card);
 
-    var recon = data.reconciliation || {};
+    setText("remitResultsSubtitle", data.advice_number ? ("Advice " + data.advice_number) : "—");
+    setText("remitPostedCount", data.posted ?? 0);
+    setText("remitFailedCount", data.failed ?? 0);
 
-    setText("remitPostedCount", data.posted_count || 0);
-    setText("remitFailedCount", data.failed_count || 0);
-    setText("remitArBalance", fmtR(recon.net_balance || 0));
-    setText("remitNetPayment", fmtR((data.header_info || {}).total_net_payment));
+    var arVal = data.ar_balance;
+    var arEl = $("remitArBalance");
+    if (arEl) {
+      arEl.textContent = fmtR(arVal);
+      arEl.style.color = (arVal === 0 || arVal === "0.00") ? "#047857" : "#b91c1c";
+    }
 
-    setText("remitResultsSubtitle",
-      "Remittance " + data.payment_reference_no + " — " + data.summary);
+    setText("remitNetPayment", fmtR(data.net_payment));
+
+    var successMsg = $("remitSuccessMsg");
+    if (data.ok && data.failed === 0) {
+      show(successMsg);
+      var summary = $("remitSuccessSummary");
+      if (summary) {
+        summary.textContent =
+          "Advice " + (data.advice_number || "") +
+          ": " + (data.posted || 0) + " journals posted to GL." +
+          " AR control cleared to R " + (arVal || "0.00") + ".";
+      }
+    } else {
+      hide(successMsg);
+    }
   }
 
-  // ----------------------------------------------------------------- Marketplace Orders Viewer
+  // ----------------------------------------------------------------- Marketplace Orders
 
   async function loadMarketplaceOrders() {
     var cid = getCompanyId();
@@ -708,12 +678,17 @@
 
   if (typeof MutationObserver !== "undefined") {
     var observer = new MutationObserver(function () {
-      var screen = document.getElementById("screen-journal");
+      var screen = document.getElementById("screen-marketplace");
       if (screen && screen.classList.contains("active")) {
         tryInit();
+        if (currentActiveTab === "orders") {
+          loadMarketplaceOrders();
+        } else if (currentActiveTab === "recon") {
+          loadMarketplaceDashboard();
+        }
       }
     });
-    var host = document.getElementById("screensHost");
+    var host = document.getElementById("screensHost") || document.body;
     if (host) {
       observer.observe(host, {
         subtree: true,
