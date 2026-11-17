@@ -42658,6 +42658,7 @@ class DatabaseService:
                         ''ias41_grant_reversal'',
                         ''ias41_grant_receipt'',
                         ''ias41_grant_receipt_reversal'',
+                        ''makro_marketplace'',
                         ''system''
                     ]::text[])
                 )',

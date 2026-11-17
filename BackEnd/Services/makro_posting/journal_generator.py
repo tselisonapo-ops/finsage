@@ -43,9 +43,14 @@ from .models import (
 class MakroJournalGenerator:
     """Builds FinSage-ready journal entries from parsed remittance data."""
 
-    def __init__(self, mapping: MakroCOAMapping):
+    def __init__(
+        self,
+        mapping: MakroCOAMapping,
+        currency: str = "USD",
+    ):
         self.m = mapping
         self.vat_rate = mapping.vat_rate
+        self.currency = str(currency or "USD").strip().upper()
 
     # ----------------------------------------------------------- public API
 
@@ -87,9 +92,9 @@ class MakroJournalGenerator:
             journal_date=header.payment_date,
             reference=ref,
             description=description,
-            currency="ZAR",
+            currency=self.currency,
             source="makro_marketplace",
-            source_id=header.payment_reference_no,
+            source_id=f"BANK-{header.payment_reference_no}",
             lines=[
                 JournalLine(
                     account_code=self.m.cash_bank,
@@ -239,10 +244,10 @@ class MakroJournalGenerator:
             journal_date=line.order_date,
             reference=ref,
             description=description,
-            currency="ZAR",
+            currency=self.currency,
             lines=lines,
             source="makro_marketplace",
-            source_id=header.payment_reference_no,
+            source_id=line.order_id,
         )
 
     # ------------------------------------------------------- return journal
@@ -368,10 +373,10 @@ class MakroJournalGenerator:
             journal_date=line.order_date,
             reference=ref,
             description=description,
-            currency="ZAR",
+            currency=self.currency,
             lines=lines,
             source="makro_marketplace",
-            source_id=header.payment_reference_no,
+            source_id=line.order_id,
         )
 
     # ------------------------------------------------------------- helpers

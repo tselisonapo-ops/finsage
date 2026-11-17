@@ -95,8 +95,17 @@ class MakroPostingService:
         self.mapping = mapping or COA_MAPPING_COMPANY_45
         self.actor_user_id = actor_user_id
 
+        # Use the company's configured accounting currency.
+        self.currency = self.db.get_company_currency(
+            self.company_id,
+            default="USD",
+        )
+
         self.parser = RemittanceParser()
-        self.generator = MakroJournalGenerator(self.mapping)
+        self.generator = MakroJournalGenerator(
+            self.mapping,
+            currency=self.currency,
+        )
         self.recon = MakroReconciliation(
             db_service=db_service,
             company_id=self.company_id,
@@ -204,11 +213,53 @@ class MakroPostingService:
             )
             status = "posted"
             error = None
+
         except Exception as exc:
-            # Re-raise if it's a duplicate-ref error (idempotency guard)
             msg = str(exc)
-            if "DUPLICATE_JOURNAL_REF" in msg or "duplicate" in msg.lower():
+
+            # If this exact journal reference already exists,
+            # treat it as previously posted rather than posting again.
+            if (
+                "DUPLICATE_JOURNAL_REF" in msg
+                or "duplicate" in msg.lower()
+            ):
+                schema = f"company_{self.company_id}"
+
+                existing = self.db.fetch_one(
+                    f"""
+                    SELECT id
+                    FROM {schema}.journal
+                    WHERE company_id = %s
+                      AND ref = %s
+                    LIMIT 1
+                    """,
+                    (self.company_id, journal.reference),
+                )
+
+                if isinstance(existing, dict):
+                    existing_id = existing.get("id")
+                elif existing:
+                    existing_id = existing[0]
+                else:
+                    existing_id = None
+
+                if existing_id is not None:
+                    return PostedJournal(
+                        reference=journal.reference,
+                        journal_date=journal.journal_date.isoformat(),
+                        description=journal.description,
+                        balanced=journal.is_balanced(),
+                        line_count=len(journal.lines),
+                        journal_id=existing_id,
+                        status="posted",
+                        error=None,
+                        entry=None,
+                    )
+
+                # A different uniqueness conflict occurred.
+                # Do not mistake it for an already-posted journal.
                 raise
+
             journal_id = None
             status = "failed"
             error = msg
@@ -266,7 +317,7 @@ class MakroPostingService:
                 entity_id=header.payment_reference_no,
                 entity_ref=header.payment_reference_no,
                 amount=float(header.total_net_payment),
-                currency="ZAR",
+                currency=self.currency,
                 before_json={},
                 after_json={
                     "payment_date": header.payment_date.isoformat(),
