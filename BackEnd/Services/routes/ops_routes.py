@@ -5680,7 +5680,7 @@ def _inq_token_auth(f):
 
 # ── Internal routes (Company A) ───────────────────────────────────
 
-@ops.route("/inquiries", methods=["POST"])
+@ops_bp.route("/inquiries", methods=["POST"])
 @require_auth
 @require_ops_permission("procurement.view")
 def create_inquiry(company_id):
@@ -5692,7 +5692,7 @@ def create_inquiry(company_id):
     return jsonify(result), 201
 
 
-@ops.route("/inquiries", methods=["GET"])
+@ops_bp.route("/inquiries", methods=["GET"])
 @require_auth
 @require_ops_permission("procurement.view")
 def list_inquiries(company_id):
@@ -5703,7 +5703,7 @@ def list_inquiries(company_id):
     return jsonify({"inquiries": items})
 
 
-@ops.route("/inquiries/<int:inquiry_id>", methods=["GET"])
+@ops_bp.route("/inquiries/<int:inquiry_id>", methods=["GET"])
 @require_auth
 @require_ops_permission("procurement.view")
 def get_inquiry(company_id, inquiry_id):
@@ -5714,7 +5714,7 @@ def get_inquiry(company_id, inquiry_id):
     return jsonify(row)
 
 
-@ops.route("/inquiries/<int:inquiry_id>/request-quote", methods=["POST"])
+@ops_bp.route("/inquiries/<int:inquiry_id>/request-quote", methods=["POST"])
 @require_auth
 @require_ops_permission("procurement.view")
 def request_inquiry_quote_route(company_id, inquiry_id):
@@ -5726,7 +5726,7 @@ def request_inquiry_quote_route(company_id, inquiry_id):
     return jsonify(result)
 
 
-@ops.route("/inquiries/<int:inquiry_id>/close", methods=["POST"])
+@ops_bp.route("/inquiries/<int:inquiry_id>/close", methods=["POST"])
 @require_auth
 @require_ops_permission("procurement.view")
 def close_inquiry_route(company_id, inquiry_id):
@@ -5743,7 +5743,7 @@ def close_inquiry_route(company_id, inquiry_id):
 
 # ── External portal routes (Company B — no JWT) ───────────────────
 
-@ops.route("/portal/inquiries/<string:token>", methods=["GET"])
+@ops_bp.route("/portal/inquiries/<string:token>", methods=["GET"])
 def portal_view_inquiry(company_id, token):
     """Public token-gated: view inquiry detail."""
     inquiry = db_service.get_ops_inquiry_by_token(company_id, token)
@@ -5754,7 +5754,7 @@ def portal_view_inquiry(company_id, token):
     return jsonify(inquiry)
 
 
-@ops.route("/portal/inquiries/<string:token>/respond", methods=["POST"])
+@ops_bp.route("/portal/inquiries/<string:token>/respond", methods=["POST"])
 def portal_respond_inquiry(company_id, token):
     """Public token-gated: submit general response (step 1)."""
     inquiry = db_service.get_ops_inquiry_by_token(company_id, token)
@@ -5773,7 +5773,7 @@ def portal_respond_inquiry(company_id, token):
     return jsonify(result)
 
 
-@ops.route("/portal/inquiries/<string:token>/submit-quote", methods=["POST"])
+@ops_bp.route("/portal/inquiries/<string:token>/submit-quote", methods=["POST"])
 def portal_submit_quote(company_id, token):
     """Public token-gated: submit filled quote template (step 2a)."""
     inquiry = db_service.get_ops_inquiry_by_token(company_id, token)
@@ -5789,7 +5789,7 @@ def portal_submit_quote(company_id, token):
     return jsonify(result)
 
 
-@ops.route("/portal/inquiries/<string:token>/upload", methods=["POST"])
+@ops_bp.route("/portal/inquiries/<string:token>/upload", methods=["POST"])
 def portal_upload_inquiry_doc(company_id, token):
     """Public token-gated: upload a quote document (step 2b)."""
     inquiry = db_service.get_ops_inquiry_by_token(company_id, token)
