@@ -58489,33 +58489,120 @@ class DatabaseService:
         GROUP BY r.company_id, r.id, r.customer_id, r.amount;
 
         CREATE OR REPLACE FUNCTION {schema}.trg_check_receipt_allocation()
-        RETURNS trigger AS $$
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $function$
         DECLARE
-            receipt_amt numeric(18,2);
-            already_alloc numeric(18,2);
+            v_receipt_amount NUMERIC(18,2);
+            v_receipt_customer INTEGER;
+            v_receipt_date DATE;
+
+            v_invoice_customer INTEGER;
+            v_invoice_date DATE;
+            v_invoice_total NUMERIC(18,2);
+            v_invoice_status TEXT;
+            v_reversed_journal INTEGER;
+            v_writeoff_journal INTEGER;
+
+            v_receipt_allocated NUMERIC(18,2);
+            v_invoice_allocated NUMERIC(18,2);
+
+            v_existing_invoice INTEGER;
         BEGIN
-        SELECT amount INTO receipt_amt
-        FROM {schema}.receipts
-        WHERE company_id = NEW.company_id AND id = NEW.receipt_id;
+            SELECT amount, customer_id, receipt_date
+            INTO v_receipt_amount, v_receipt_customer, v_receipt_date
+            FROM {schema}.receipts
+            WHERE company_id = NEW.company_id
+              AND id = NEW.receipt_id
+            FOR UPDATE;
 
-        IF receipt_amt IS NULL THEN
-            RAISE EXCEPTION 'Receipt not found';
-        END IF;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'Receipt not found';
+            END IF;
 
-        SELECT COALESCE(SUM(amount),0) INTO already_alloc
-        FROM {schema}.receipt_allocations
-        WHERE company_id = NEW.company_id
-            AND receipt_id = NEW.receipt_id
-            AND id <> COALESCE(NEW.id, 0);
+            SELECT customer_id, invoice_date,
+                   COALESCE(total_amount, 0), status,
+                   reversed_journal_id, writeoff_journal_id
+            INTO v_invoice_customer, v_invoice_date,
+                 v_invoice_total, v_invoice_status,
+                 v_reversed_journal, v_writeoff_journal
+            FROM {schema}.invoices
+            WHERE company_id = NEW.company_id
+              AND id = NEW.invoice_id
+            FOR UPDATE;
 
-        IF (already_alloc + NEW.amount) > receipt_amt THEN
-            RAISE EXCEPTION 'Allocation exceeds receipt amount (receipt=%, allocated=%, new=%)',
-            receipt_amt, already_alloc, NEW.amount;
-        END IF;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'Invoice not found';
+            END IF;
 
-        RETURN NEW;
+            IF v_receipt_customer <> v_invoice_customer THEN
+                RAISE EXCEPTION
+                    'Receipt customer does not match invoice customer';
+            END IF;
+
+            IF v_receipt_date < v_invoice_date THEN
+                RAISE EXCEPTION
+                    'Receipt date % cannot be earlier than invoice date %',
+                    v_receipt_date, v_invoice_date;
+            END IF;
+
+            IF v_invoice_status = 'reversed'
+               OR v_reversed_journal IS NOT NULL THEN
+                RAISE EXCEPTION
+                    'Cannot allocate receipt to a reversed invoice';
+            END IF;
+
+            IF v_writeoff_journal IS NOT NULL THEN
+                RAISE EXCEPTION
+                    'Cannot allocate receipt to an invoice with a recorded write-off';
+            END IF;
+
+            IF v_invoice_status NOT IN ('approved', 'paid') THEN
+                RAISE EXCEPTION
+                    'Invoice status % does not allow receipt allocation',
+                    v_invoice_status;
+            END IF;
+
+            IF TG_OP = 'UPDATE' THEN
+                v_existing_invoice := OLD.invoice_id;
+            ELSE
+                v_existing_invoice := NULL;
+            END IF;
+
+            IF v_invoice_status = 'paid'
+               AND v_existing_invoice IS DISTINCT FROM NEW.invoice_id THEN
+                RAISE EXCEPTION 'Invoice is already paid';
+            END IF;
+
+            SELECT COALESCE(SUM(amount), 0)
+            INTO v_receipt_allocated
+            FROM {schema}.receipt_allocations
+            WHERE company_id = NEW.company_id
+              AND receipt_id = NEW.receipt_id
+              AND id <> COALESCE(NEW.id, 0);
+
+            IF v_receipt_allocated + NEW.amount > v_receipt_amount THEN
+                RAISE EXCEPTION
+                    'Allocation exceeds receipt amount (receipt=%, allocated=%, new=%)',
+                    v_receipt_amount, v_receipt_allocated, NEW.amount;
+            END IF;
+
+            SELECT COALESCE(SUM(amount), 0)
+            INTO v_invoice_allocated
+            FROM {schema}.receipt_allocations
+            WHERE company_id = NEW.company_id
+              AND invoice_id = NEW.invoice_id
+              AND id <> COALESCE(NEW.id, 0);
+
+            IF v_invoice_allocated + NEW.amount > v_invoice_total THEN
+                RAISE EXCEPTION
+                    'Allocation exceeds invoice outstanding balance (invoice total=%, already allocated=%, new=%)',
+                    v_invoice_total, v_invoice_allocated, NEW.amount;
+            END IF;
+
+            RETURN NEW;
         END;
-        $$ LANGUAGE plpgsql;
+        $function$;
 
         DROP TRIGGER IF EXISTS check_receipt_allocation ON {schema}.receipt_allocations;
 
@@ -70731,17 +70818,26 @@ class DatabaseService:
             if ref0.startswith("AUTO-"):
                 raise ValueError("System journals (AUTO-*) cannot be reversed")
 
+            # Reverse the original journal lines, not the ledger.
+            # Journal lines are the source for the reversal account codes.
             cur.execute(f"""
-                SELECT account, debit, credit, memo
-                FROM {schema}.ledger
-                WHERE journal_id = %s
-                ORDER BY id ASC
-            """, (journal_id,))
+                SELECT
+                    account_code AS account,
+                    debit,
+                    credit,
+                    description AS memo
+                FROM {schema}.journal_lines
+                WHERE company_id = %s
+                  AND journal_id = %s
+                ORDER BY line_no ASC
+            """, (company_id, journal_id))
 
             rows = cur.fetchall() or []
             if not rows:
-                raise ValueError("Journal has no ledger lines to reverse")
-
+                raise ValueError(
+                    f"REVERSAL_BLOCKED_NO_JOURNAL_LINES|journal_id={journal_id}"
+                )
+            
             rev_ref = f"REV-{journal_id}"
             rev_desc = f"Reversal of {journal_id}" + (f" | {reason}" if reason else "")
 
@@ -112182,109 +112278,242 @@ class DatabaseService:
             "warnings": [],
         }
 
-
     def compute_loan_current_noncurrent_split(self, conn, company_id: int, *, loan_id: int, as_of_date=None):
         schema = self.company_schema(company_id)
         as_of_date = _safe_date(as_of_date) or date.today()
 
         with conn.cursor() as cur:
             cur.execute(f"""
+                WITH latest_version AS (
+                    SELECT MAX(schedule_version) AS schedule_version
+                    FROM {schema}.loan_schedules
+                    WHERE company_id = %s
+                    AND loan_id = %s
+                ),
+                future_schedule AS (
+                    SELECT
+                        ls.schedule_version,
+                        ls.due_date,
+                        GREATEST(
+                            0,
+                            COALESCE(ls.scheduled_principal, 0)
+                            - COALESCE(ls.paid_principal, 0)
+                        ) AS remaining_principal
+                    FROM {schema}.loan_schedules ls
+                    CROSS JOIN latest_version lv
+                    WHERE ls.company_id = %s
+                    AND ls.loan_id = %s
+                    AND ls.schedule_version = lv.schedule_version
+                    AND ls.due_date > %s
+                )
                 SELECT
-                    COALESCE(SUM(
-                        CASE WHEN due_date <= %s + INTERVAL '12 months'
-                            THEN GREATEST(0, scheduled_principal - paid_principal)
-                            ELSE 0 END
-                    ), 0) AS current_portion,
-                    COALESCE(SUM(
-                        CASE WHEN due_date > %s + INTERVAL '12 months'
-                            THEN GREATEST(0, scheduled_principal - paid_principal)
-                            ELSE 0 END
-                    ), 0) AS noncurrent_portion
-                FROM {schema}.loan_schedules
-                WHERE company_id=%s AND loan_id=%s
-            """, (as_of_date, as_of_date, company_id, loan_id))
+                    MAX(schedule_version) AS schedule_version,
+                    COALESCE(
+                        SUM(remaining_principal)
+                        FILTER (
+                            WHERE due_date <= %s::date + INTERVAL '12 months'
+                        ), 0
+                    ) AS current_portion,
+                    COALESCE(
+                        SUM(remaining_principal)
+                        FILTER (
+                            WHERE due_date > %s::date + INTERVAL '12 months'
+                        ), 0
+                    ) AS noncurrent_portion
+                FROM future_schedule
+            """, (
+                company_id,
+                loan_id,
+                company_id,
+                loan_id,
+                as_of_date,
+                as_of_date,
+                as_of_date
+            ))
+
             row = cur.fetchone() or {}
+
             return {
                 "as_of_date": str(as_of_date),
+                "schedule_version": row.get("schedule_version"),
                 "current_portion": float(_money(row.get("current_portion"))),
                 "noncurrent_portion": float(_money(row.get("noncurrent_portion"))),
             }
 
+
     def post_loan_reclassification(self, conn, company_id: int, *, loan_id: int, as_of_date=None, user_id=None):
         schema = self.company_schema(company_id)
-        split = self.compute_loan_current_noncurrent_split(conn, company_id, loan_id=loan_id, as_of_date=as_of_date)
+
+        split = self.compute_loan_current_noncurrent_split(
+            conn,
+            company_id,
+            loan_id=loan_id,
+            as_of_date=as_of_date,
+        )
 
         loan = self.get_loan_by_id(conn, company_id, loan_id)
         if not loan:
             raise ValueError("loan not found")
 
-        current_code = (loan.get("loan_payable_current_account_code") or "").strip()
-        noncurrent_code = (loan.get("loan_payable_noncurrent_account_code") or "").strip()
+        current_code = (
+            loan.get("loan_payable_current_account_code") or ""
+        ).strip()
 
-        amt = _money(split["current_portion"])
-        if amt <= 0:
-            return {"ok": True, "message": "no current portion to reclassify", "amount": 0}
+        noncurrent_code = (
+            loan.get("loan_payable_noncurrent_account_code") or ""
+        ).strip()
 
-        header = {
-            "date": split["as_of_date"],
-            "ref": f"LOAN-RECLASS-{loan_id}",
-            "description": f"Loan current/non-current reclassification - {loan['loan_name']}",
-            "gross_amount": float(amt),
-            "net_amount": float(amt),
-            "vat_amount": 0.0,
-            "source": "loan_reclassification",
-            "source_id": loan_id,
-        }
-        lines = [
-            {
-                "account_code": noncurrent_code,
-                "description": f"Reclass to current - {loan['loan_name']}",
-                "debit": float(amt),
-                "credit": 0.0,
-            },
-            {
-                "account_code": current_code,
-                "description": f"Reclass to current - {loan['loan_name']}",
-                "debit": 0.0,
-                "credit": float(amt),
-            },
-        ]
+        if not current_code or not noncurrent_code:
+            raise ValueError(
+                "Loan current and non-current liability accounts must be configured"
+            )
 
-        header["lines"] = lines
+        if current_code == noncurrent_code:
+            raise ValueError(
+                "Loan current and non-current liability accounts cannot be the same"
+            )
 
-        # carry engagement context if loan is engagement-linked
-        engagement_company_id = (
-            loan.get("engagement_company_id")
-            or loan.get("source_company_id")
-        )
-        engagement_id = loan.get("engagement_id")
-
-        if engagement_company_id and engagement_id:
-            header["engagement_company_id"] = int(engagement_company_id)
-            header["engagement_id"] = int(engagement_id)
-            header["created_by_user_id"] = user_id
-            header["updated_by_user_id"] = user_id
+        as_of = _safe_date(split["as_of_date"])
+        target_current = _money(split["current_portion"])
 
         with conn.cursor() as cur:
-            header["module_name"] = "loans"
-            header["module_name"] = "loans"
-            header["event_type"] = "posted"
-            header["source_table"] = "loans"
-            header["created_by_user_id"] = user_id
-            header["updated_by_user_id"] = user_id
-            header["prepared_by_user_id"] = user_id
+            # Lock the loan record to prevent concurrent reclassification.
+            cur.execute(f"""
+                SELECT id
+                FROM {schema}.loans
+                WHERE company_id = %s
+                AND id = %s
+                FOR UPDATE
+            """, (company_id, loan_id))
+
+            if not cur.fetchone():
+                raise ValueError("Loan not found while locking for reclassification")
+
+            # Calculate the current portion already transferred by active
+            # reclassification journals for this specific loan.
+            cur.execute(f"""
+                SELECT
+                    COALESCE(SUM(
+                        CASE
+                            WHEN jl.account_code = %s
+                                THEN jl.credit - jl.debit
+                            ELSE 0
+                        END
+                    ), 0) AS already_current
+                FROM {schema}.journal j
+                JOIN {schema}.journal_lines jl
+                ON jl.company_id = j.company_id
+                AND jl.journal_id = j.id
+                WHERE j.company_id = %s
+                AND j.source = 'loan_reclassification'
+                AND j.source_id = %s
+                AND COALESCE(j.is_reversal, FALSE) = FALSE
+                AND j.reversed_by_journal_id IS NULL
+            """, (
+                current_code,
+                company_id,
+                loan_id,
+            ))
+
+            row = cur.fetchone() or {}
+            already_current = _money(row.get("already_current"))
+
+            # Positive adjustment: transfer non-current to current.
+            # Negative adjustment: transfer current back to non-current.
+            adjustment = _money(target_current - already_current)
+
+            if adjustment == 0:
+                return {
+                    "ok": True,
+                    "message": "Loan is already correctly classified",
+                    "loan_id": loan_id,
+                    "as_of_date": str(as_of),
+                    "target_current_portion": float(target_current),
+                    "already_current": float(already_current),
+                    "adjustment": 0.0,
+                    "posted_journal_id": None,
+                    "split": split,
+                }
+
+            amount = abs(adjustment)
+
+            if adjustment > 0:
+                debit_code = noncurrent_code
+                credit_code = current_code
+                description = f"Reclass to current - {loan['loan_name']}"
+            else:
+                debit_code = current_code
+                credit_code = noncurrent_code
+                description = f"Reclass to non-current - {loan['loan_name']}"
+
+            header = {
+                "date": as_of,
+                "ref": f"LOAN-RECLASS-{loan_id}-{as_of.isoformat()}",
+                "description": (
+                    f"Loan current/non-current reclassification - "
+                    f"{loan['loan_name']} as at {as_of}"
+                ),
+                "gross_amount": float(amount),
+                "net_amount": float(amount),
+                "vat_amount": 0.0,
+                "source": "loan_reclassification",
+                "source_id": loan_id,
+                "module_name": "loans",
+                "event_type": "posted",
+                "source_table": "loans",
+                "created_by_user_id": user_id,
+                "updated_by_user_id": user_id,
+                "prepared_by_user_id": user_id,
+            }
+
+            header["lines"] = [
+                {
+                    "account_code": debit_code,
+                    "description": description,
+                    "debit": float(amount),
+                    "credit": 0.0,
+                },
+                {
+                    "account_code": credit_code,
+                    "description": description,
+                    "debit": 0.0,
+                    "credit": float(amount),
+                },
+            ]
+
+            # Preserve engagement context for engagement-linked loans.
+            engagement_company_id = (
+                loan.get("engagement_company_id")
+                or loan.get("source_company_id")
+            )
+            engagement_id = loan.get("engagement_id")
+
+            if engagement_company_id and engagement_id:
+                header["engagement_company_id"] = int(engagement_company_id)
+                header["engagement_id"] = int(engagement_id)
 
             jid = self.post_journal(company_id, header, cur=cur)
 
             cur.execute(f"""
                 UPDATE {schema}.loans
-                SET last_reclass_journal_id=%s, updated_at=NOW()
-                WHERE company_id=%s AND id=%s
+                SET last_reclass_journal_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
             """, (jid, company_id, loan_id))
 
         conn.commit()
-        return {"loan_id": loan_id, "posted_journal_id": jid, "split": split}
 
+        return {
+            "ok": True,
+            "loan_id": loan_id,
+            "posted_journal_id": jid,
+            "as_of_date": str(as_of),
+            "target_current_portion": float(target_current),
+            "previously_classified_current": float(already_current),
+            "adjustment": float(adjustment),
+            "split": split,
+        }
 
     # ---------------------------
     # CUSTOMERS (per-company)
@@ -119222,6 +119451,11 @@ class DatabaseService:
         if customer_id:
             where.append("i.customer_id = %s")
             params.append(int(customer_id))
+
+        # Exclude incomplete invoice records without an invoice number
+        where.append(
+            "NULLIF(BTRIM(COALESCE(i.number, '')), '') IS NOT NULL"
+        )
 
         where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 

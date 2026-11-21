@@ -895,9 +895,20 @@ def _coa_role_from_text(
         or "payable" in text
     )
 
-    is_rou = any(k in text for k in (
-        "right-of-use", "right of use", "rou", "ifrs 16", "lease amort"
+
+    is_rou = (
+        any(k in account_text for k in (
+            "right-of-use",
+            "right of use",
+            "lease amort",
         ))
+        or bool(re.search(r"\brou\b", account_text))
+        or (
+            "ifrs 16" in text
+            and "lease" in account_text
+        )
+    )
+
     # ----------------------------
     # IAS 41 Agriculture
     # Must run before generic inventory, sales, fair-value and PPE rules
@@ -2690,27 +2701,111 @@ def _coa_role_from_text(
         ):
             return "ifrs9_financial_liability_amortised_cost"
 
+
     # ----------------------------
-    # asset-class detection
+    # Asset-class detection
+    # Use account name, description and subcategory.
+    # Avoid broad section/category labels for specific asset classes.
     # ----------------------------
+    class_text = " ".join([
+        (name or ""),
+        (description or ""),
+        (subcategory or ""),
+    ]).lower()
+
+    def has_class_any(*terms: str) -> bool:
+        return any(term in class_text for term in terms if term)
+
+    def has_class_word(word: str) -> bool:
+        return bool(re.search(
+            rf"\b{re.escape(word)}\b",
+            class_text,
+        ))
+
     land_classification_text = " ".join([
         (name or ""),
         (subcategory or ""),
     ]).lower()
 
     is_land = bool(re.search(r"\bland\b", land_classification_text))
-    is_buildings = has_any("building", "buildings", "premises", "warehouse")
-    is_furniture = has_any("office furniture", "furniture", "fixtures", "fixtures & fittings", "fittings")
-    is_computers = has_any("computer equipment", "computer", "server", "laptop", "it hardware", "it equipment")
-    is_office_equipment = has_any("office equipment", "printer", "scanner", "photocopier", "copier", "projector")
-    is_motor_vehicles = has_any("motor vehicle", "motor vehicles", "vehicle", "vehicles", "fleet", "car", "bakkie", "van", "pickup")
-    is_heavy_vehicles = has_any("lorry", "lorries", "truck", "trucks", "tipper", "heavy vehicle", "haulage vehicle")
-    is_construction_equipment = has_any("construction equipment", "tlb", "backhoe", "back dipper", "grader", "loader", "dozer", "bulldozer", "crane", "cement mixer")
-    is_mining_equipment = has_any("mining equipment", "mine equipment", "haul truck", "dump truck", "excavator", "crusher", "drill rig")
-    is_manufacturing_equipment = has_any("manufacturing equipment", "production equipment", "factory equipment", "plant", "machinery", "machine")
-    is_tools = has_any("tools", "small equipment")
-    is_leasehold = has_any("leasehold", "improvement", "renovation")
-    is_intangible = has_any("intangible", "software", "license", "licence", "trademark")
+
+    is_bicycles = has_class_any(
+        "bicycle",
+        "bicycles",
+        "bicycle fleet",
+        "bicycle fleet equipment",
+        "pedal cycle",
+        "pedal cycles",
+    )
+
+    is_buildings = has_class_any(
+        "building", "buildings", "premises", "warehouse"
+    )
+
+    is_furniture = has_class_any(
+        "office furniture", "furniture", "fixtures",
+        "fixtures & fittings", "fittings"
+    )
+
+    is_computers = has_class_any(
+        "computer equipment", "computer", "server",
+        "laptop", "it hardware", "it equipment"
+    )
+
+    is_office_equipment = has_class_any(
+        "office equipment", "printer", "scanner",
+        "photocopier", "copier", "projector"
+    )
+
+    is_heavy_vehicles = has_class_any(
+        "lorry", "lorries", "truck", "trucks",
+        "tipper", "heavy vehicle", "haulage vehicle",
+        "haul truck", "dump truck"
+    )
+
+    is_motor_vehicles = (
+        has_class_any(
+            "motor vehicle", "motor vehicles",
+            "motorbike", "motorbikes",
+            "motorcycle", "motorcycles",
+            "scooter", "scooters",
+            "bakkie", "bakkies",
+            "van", "vans",
+            "pickup", "pick-up",
+        )
+        or has_class_word("car")
+    ) and not is_bicycles
+
+    is_construction_equipment = has_class_any(
+        "construction equipment", "tlb", "backhoe",
+        "back dipper", "grader", "loader", "dozer",
+        "bulldozer", "crane", "cement mixer"
+    )
+
+    is_mining_equipment = has_class_any(
+        "mining equipment", "mine equipment",
+        "haul truck", "dump truck", "excavator",
+        "crusher", "drill rig"
+    )
+
+    is_manufacturing_equipment = has_class_any(
+        "manufacturing equipment", "production equipment",
+        "factory equipment", "plant machinery",
+        "machinery", "machine"
+    )
+
+    is_tools = has_class_any("tools", "small equipment")
+
+    is_leasehold = has_class_any(
+        "leasehold", "leasehold improvement",
+        "leasehold improvements", "renovation"
+    )
+
+    is_intangible = has_class_any(
+        "intangible", "software", "license",
+        "licence", "trademark"
+    )
+
     # ----------------------------
     # Expense side
     # ----------------------------

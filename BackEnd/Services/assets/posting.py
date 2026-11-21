@@ -7533,6 +7533,10 @@ ASSET_CLASS_DEPRECIATION_ROLES = {
         "depreciation_expense_motor_vehicles",
         "accumulated_depreciation_motor_vehicles",
     ),
+    "motorcycle fleet": (
+        "depreciation_expense_ppe",
+        "accumulated_depreciation_motorbikes",
+    ),
     "motorcycles / bikes": (
         "depreciation_expense_motor_vehicles",
         "accumulated_depreciation_motor_vehicles",
@@ -8383,6 +8387,10 @@ def build_dep_preview_journal_lines(
     elif asset_class in ("plant and machinery",):
         dep_role = "depreciation_expense_plant_machinery"
         acc_dep_role = "accumulated_depreciation_plant_machinery"
+
+    elif asset_class == "motorcycle fleet":
+        dep_role = "depreciation_expense_ppe"
+        acc_dep_role = "accumulated_depreciation_motorbikes"
 
     elif asset_class in (
         "vehicles",
