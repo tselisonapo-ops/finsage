@@ -40,7 +40,10 @@ Register next to the other Control blueprints:
     app.register_blueprint(subscriptions_bp)
 """
 
-from flask import Blueprint, request, jsonify, g, current_app
+from flask import Blueprint, request, jsonify, g, current_app, Response
+from datetime import datetime, timedelta
+import json
+import os
 
 from BackEnd.Services.control_auth import (
     require_control_auth,
@@ -182,6 +185,22 @@ def confirm_payment(company_id, billing_id):
             billing_id,
             external_payment_id=reference,
         )
+        if note:
+            try:
+                conn = g.control_service.db.get_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE public.subscription_billing
+                        SET metadata = metadata || jsonb_build_object('settlement_note', %s::text)
+                        WHERE id = %s
+                        """,
+                        (note, billing_id),
+                    )
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # engine failure — never mask as success
@@ -413,3 +432,366 @@ def extend_trial(company_id):
         metadata={"via": "control", "company_id": company_id},
     )
     return jsonify({"ok": True, "result": result})
+
+
+# ---------------------------------------------------------------
+# PROVISIONING (new companies with no subscription record)
+# ---------------------------------------------------------------
+
+@subscriptions_bp.post("/<int:company_id>/provision")
+@require_control_admin
+def provision_subscription(company_id):
+    """
+    Start a trial or commit an active plan for a company (e.g. newly added companies).
+
+    Body:
+      mode: "trial" | "commit" (default "trial")
+      plan_code: "business" | "premium" | "enterprise" (default "premium")
+      trial_days: int (default 14, for trial mode)
+      billing_interval: "monthly" | "annual" (for commit mode)
+      reason: str
+    """
+    billing = _billing_service()
+    if billing is None:
+        return _billing_unavailable()
+
+    body = _body()
+    mode = (body.get("mode") or "trial").strip().lower()
+    plan_code = (body.get("plan_code") or "premium").strip().lower()
+    trial_days = body.get("trial_days")
+    billing_interval = (body.get("billing_interval") or "monthly").strip().lower()
+    reason = (body.get("reason") or "").strip() or None
+
+    try:
+        if mode == "trial":
+            days = int(trial_days) if trial_days is not None else 14
+            result = billing.provision_trial(
+                company_id,
+                plan_code=plan_code,
+                trial_days=days,
+                actor_user_id=g.user_id,
+                source="control",
+            )
+        else:
+            result = billing.commit_plan(
+                company_id,
+                plan_code=plan_code,
+                billing_interval=billing_interval,
+                actor_user_id=g.user_id,
+            )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({
+            "error": f"Subscription provisioning ({mode}) failed",
+            "detail": str(exc),
+        }), 500
+
+    after = g.control_service.get_company_subscription(company_id)
+    _audit(
+        f"subscription.provision_{mode}",
+        entity_type="company_subscription",
+        entity_id=(after or {}).get("subscription_id"),
+        description=(
+            f"provisioned {mode} plan={plan_code} for company {company_id}"
+            + (f" — {reason}" if reason else "")
+        ),
+        after=after,
+        metadata={"via": "control", "company_id": company_id, "mode": mode},
+    )
+    return jsonify({"ok": True, "mode": mode, "result": result, "subscription": after})
+
+
+# ---------------------------------------------------------------
+# UNCANCEL (reverse pending cancellation)
+# ---------------------------------------------------------------
+
+@subscriptions_bp.post("/<int:company_id>/uncancel")
+@require_control_admin
+def uncancel_subscription(company_id):
+    """
+    Reverses a pending subscription cancellation before period end.
+    """
+    body = _body()
+    reason = (body.get("reason") or "").strip() or None
+    try:
+        result = g.control_service.admin_uncancel_subscription(
+            company_id, actor_user_id=g.user_id
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({
+            "error": "Failed to undo cancellation",
+            "detail": str(exc),
+        }), 500
+
+    after = g.control_service.get_company_subscription(company_id)
+    _audit(
+        "subscription.uncancelled",
+        entity_type="company_subscription",
+        entity_id=(after or {}).get("subscription_id"),
+        description=f"pending cancellation reversed for company {company_id}" + (f" — {reason}" if reason else ""),
+        after=after,
+        metadata={"via": "control", "company_id": company_id},
+    )
+    return jsonify({"ok": True, "result": result, "subscription": after})
+
+
+# ---------------------------------------------------------------
+# MANUAL INVOICE / BILLING CHARGE
+# ---------------------------------------------------------------
+
+@subscriptions_bp.post("/<int:company_id>/billing/issue")
+@require_control_admin
+def issue_manual_billing(company_id):
+    """
+    Issue a manual subscription invoice / billing row for a company.
+
+    Body:
+      amount: float (required)
+      currency: str (default "LSL")
+      description: str (e.g. "FinSage Subscription - Custom Invoice")
+      lines: list of { description, quantity, unit_price, total }
+      due_at: date string
+      period_start: date string
+      period_end: date string
+      invoice_reference: str (optional)
+      note: str
+    """
+    billing = _billing_service()
+    if billing is None:
+        return _billing_unavailable()
+
+    body = _body()
+    amount_raw = body.get("amount")
+    if amount_raw is None:
+        return jsonify({"error": "amount is required"}), 400
+    try:
+        amount = float(amount_raw)
+        if amount < 0:
+            raise ValueError()
+    except (ValueError, TypeError):
+        return jsonify({"error": "amount must be a non-negative number"}), 400
+
+    currency = (body.get("currency") or "LSL").strip().upper()
+    description = (body.get("description") or "Subscription Invoice").strip()
+    lines = body.get("lines") or []
+    due_at = body.get("due_at")
+    period_start = body.get("period_start")
+    period_end = body.get("period_end")
+    note = (body.get("note") or "").strip() or None
+
+    sub = billing.get_active_subscription(company_id)
+    if not sub:
+        sub_row = g.control_service.get_company_subscription(company_id)
+        if sub_row:
+            subscription_id = sub_row.get("subscription_id")
+        else:
+            prov = billing.provision_trial(company_id, source="manual_billing")
+            subscription_id = prov.get("subscription_id")
+    else:
+        subscription_id = sub["id"]
+
+    now = datetime.utcnow()
+    ref_suffix = now.strftime("%Y%m%d%H%M%S")
+    invoice_ref = (body.get("invoice_reference") or "").strip() or f"FS-INV-{company_id}-{ref_suffix}"
+    billing_ref = f"FS-BILL-{company_id}-{ref_suffix}"
+
+    meta = {
+        "kind": "manual_invoice",
+        "description": description,
+        "note": note,
+        "issued_by_control_user_id": g.user_id,
+        "lines": lines if lines else [{"description": description, "quantity": 1, "unit_price": amount, "total": amount}],
+    }
+
+    conn = g.control_service.db.get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO public.subscription_billing (
+                    subscription_id, company_id, billing_reference, invoice_reference,
+                    billing_status, amount, currency, billing_period_start,
+                    billing_period_end, due_at, metadata, created_at, updated_at
+                )
+                VALUES (
+                    %s, %s, %s, %s,
+                    'pending', %s, %s, %s,
+                    %s, COALESCE(%s, NOW() + INTERVAL '14 days'), %s::jsonb, NOW(), NOW()
+                )
+                RETURNING id
+                """,
+                (
+                    subscription_id, company_id, billing_ref, invoice_ref,
+                    amount, currency, period_start or now,
+                    period_end or (now + timedelta(days=30)), due_at,
+                    json.dumps(meta),
+                ),
+            )
+            billing_id = cur.fetchone()[0]
+
+            billing._event(
+                cur, subscription_id, company_id, "manual_invoice_issued",
+                description=f"Manual invoice issued: {invoice_ref} ({currency} {amount})",
+                metadata={"billing_id": billing_id, "invoice_reference": invoice_ref, "amount": amount, "note": note},
+            )
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        return jsonify({"error": "Failed to create billing record", "detail": str(exc)}), 500
+    finally:
+        conn.close()
+
+    _audit(
+        "subscription.invoice_issued",
+        entity_type="subscription_billing",
+        entity_id=billing_id,
+        description=f"Manual invoice {invoice_ref} issued for company {company_id} ({currency} {amount})",
+        after={"billing_id": billing_id, "invoice_reference": invoice_ref, "amount": amount, "billing_status": "pending"},
+        metadata={"via": "control", "company_id": company_id},
+    )
+
+    return jsonify({
+        "ok": True,
+        "billing_id": billing_id,
+        "invoice_reference": invoice_ref,
+        "amount": amount,
+        "currency": currency,
+        "billing_status": "pending",
+    })
+
+
+# ---------------------------------------------------------------
+# INVOICE PDF GENERATION
+# ---------------------------------------------------------------
+
+@subscriptions_bp.get("/<int:company_id>/billing/<int:billing_id>/invoice-pdf")
+@require_control_auth
+def get_billing_invoice_pdf(company_id, billing_id):
+    """
+    Generate and stream an invoice PDF for a subscription billing row.
+    """
+    from BackEnd.Services.invoice_pdf_service import generate_invoice_pdf
+
+    row = g.control_service.get_billing_row_for_company(company_id, billing_id)
+    if not row:
+        return jsonify({"error": "Billing row not found"}), 404
+
+    company = g.control_service.db.fetch_one(
+        """
+        SELECT id, name, company_email, company_phone, physical_address,
+               postal_address, vat, tin, company_reg_no, currency
+        FROM public.companies
+        WHERE id = %s
+        """,
+        (company_id,)
+    ) or {"name": f"Company #{company_id}"}
+
+    meta = row.get("metadata") or {}
+    lines = meta.get("lines") or [
+        {
+            "description": meta.get("description") or f"Subscription Billing ({row.get('invoice_reference') or row.get('billing_reference')})",
+            "quantity": 1,
+            "unit_price": float(row.get("amount") or 0),
+            "line_total": float(row.get("amount") or 0),
+            "total": float(row.get("amount") or 0),
+            "tax_rate": 0,
+            "tax_amount": 0,
+        }
+    ]
+
+    inv_doc = {
+        "invoice_number": row.get("invoice_reference") or row.get("billing_reference") or f"FS-{billing_id}",
+        "number": row.get("invoice_reference") or row.get("billing_reference") or f"FS-{billing_id}",
+        "invoice_date": row.get("created_at").strftime("%Y-%m-%d") if hasattr(row.get("created_at"), "strftime") else str(row.get("created_at") or "")[:10],
+        "due_date": row.get("due_at").strftime("%Y-%m-%d") if hasattr(row.get("due_at"), "strftime") else str(row.get("due_at") or "")[:10],
+        "customer_name": company.get("name") or company.get("company_name"),
+        "customer": {
+            "name": company.get("name") or company.get("company_name"),
+            "email": company.get("company_email"),
+            "phone": company.get("company_phone"),
+            "address": company.get("physical_address") or company.get("postal_address"),
+            "vat_no": company.get("vat"),
+            "reg_no": company.get("company_reg_no"),
+        },
+        "lines": lines,
+        "currency": row.get("currency") or "LSL",
+        "subtotal": float(row.get("amount") or 0),
+        "total_amount": float(row.get("amount") or 0),
+        "grand_total": float(row.get("amount") or 0),
+        "status": row.get("billing_status") or "pending",
+        "notes": meta.get("note") or (
+            f"Subscription Payment ({row.get('invoice_reference') or row.get('billing_reference')})\n"
+            "Remittance via Mobile Money Wallet:\n"
+            f"• M-Pesa: {os.environ.get('PLATFORM_MPESA_NUMBER', '[M-Pesa Number]')} ({os.environ.get('PLATFORM_OWNER_NAME', 'Tseliso Napo')})\n"
+            f"• EcoCash: {os.environ.get('PLATFORM_ECOCASH_NUMBER', '[EcoCash Number]')} ({os.environ.get('PLATFORM_OWNER_NAME', 'Tseliso Napo')})\n"
+            f"Reference: Use Invoice Ref '{row.get('invoice_reference') or row.get('billing_reference')}'"
+        ),
+    }
+
+    platform_name = os.environ.get("PLATFORM_COMPANY_NAME", "FinSphere Solutions")
+    owner_name = os.environ.get("PLATFORM_OWNER_NAME", "Tseliso Napo")
+    owner_id = os.environ.get("PLATFORM_OWNER_ID_NO", "").strip()
+    contact_email = os.environ.get("PLATFORM_CONTACT_EMAIL", "accounts@finspheresolutions.com")
+    billing_email = os.environ.get("PLATFORM_BILLING_EMAIL", "billing@finspheresolutions.com")
+    mpesa_no = os.environ.get("PLATFORM_MPESA_NUMBER", "").strip()
+    ecocash_no = os.environ.get("PLATFORM_ECOCASH_NUMBER", "").strip()
+    address = os.environ.get("PLATFORM_ADDRESS", "Maseru, Lesotho")
+
+    reg_label = f"ID No: {owner_id} (Sole Trader)" if owner_id else f"Operating as Sole Trader ({owner_name})"
+
+    issuer_company = {
+        "name": platform_name,
+        "company_name": platform_name,
+        "company_reg_no": reg_label,
+        "reg_no": reg_label,
+        "email": contact_email,
+        "billing_email": billing_email,
+        "phone": mpesa_no or ecocash_no or "",
+        "address": address,
+        "currency": row.get("currency") or "LSL",
+    }
+
+    try:
+        pdf_bytes = generate_invoice_pdf(inv_doc, company=issuer_company)
+    except Exception as exc:
+        return jsonify({"error": "Failed to render PDF", "detail": str(exc)}), 500
+
+    filename = f"Invoice_{inv_doc['invoice_number']}.pdf"
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f"inline; filename=\"{filename}\"",
+            "Content-Type": "application/pdf",
+        },
+    )
+
+
+# ---------------------------------------------------------------
+# SYNC COMPANIES TO ACCOUNTING CUSTOMERS
+# ---------------------------------------------------------------
+
+@subscriptions_bp.post("/sync-companies-to-accounting")
+@require_control_admin
+def sync_companies_to_accounting():
+    """
+    Sync all active public.companies into an accounting company's customers table.
+    Body: { "accounting_company_id": int }
+    """
+    body = _body()
+    accounting_cid = body.get("accounting_company_id")
+    if not accounting_cid:
+        return jsonify({"error": "accounting_company_id is required"}), 400
+
+    result = g.control_service.db.sync_customers_from_public_companies(int(accounting_cid))
+    _audit(
+        "accounting.customers_synced_from_companies",
+        entity_type="company",
+        entity_id=int(accounting_cid),
+        description=f"Synced {result.get('total_companies')} public companies to accounting company #{accounting_cid} customers",
+        metadata=result,
+    )
+    return jsonify(result)

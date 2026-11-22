@@ -185,6 +185,8 @@ print("[BOOT] About to import/register blueprints")
 from BackEnd.Services.lease_routes import bp as leases_bp
 from BackEnd.Services.routes.receipt_routes import receipts_bp
 from BackEnd.Services.routes.invoice_routes import invoices_bp
+from BackEnd.Services.routes.invoice_template_routes import invoice_templates_bp
+from BackEnd.Services.routes.bank_feed_routes import bank_feeds_bp
 from .journal_routes import journal_bp
 from .credit_routes import credit_bp
 from .reports_routes import reports_bp
@@ -697,6 +699,8 @@ def handle_any_exception(e):
 app.register_blueprint(leases_bp)
 app.register_blueprint(receipts_bp)
 app.register_blueprint(invoices_bp)
+app.register_blueprint(invoice_templates_bp)
+app.register_blueprint(bank_feeds_bp)
 app.register_blueprint(coa_bp)
 app.register_blueprint(journal_bp)
 app.register_blueprint(reports_bp)
@@ -9838,6 +9842,19 @@ def api_company_customers(company_id: int):
     # ---------- GET ----------
     if request.method == "GET":
         include_inactive = request.args.get("include_inactive") == "1"
+        # STRICT ISOLATION GUARD: Only the designated platform billing company (e.g. company 1)
+        # is permitted to sync or read customer records from public.companies.
+        # Normal user companies NEVER get access to other platform companies.
+        if request.args.get("source") == "companies" or request.args.get("sync_companies") == "1":
+            platform_cid = int(os.environ.get("PLATFORM_BILLING_COMPANY_ID", 1))
+            if int(company_id) == platform_cid:
+                try:
+                    db_service.sync_customers_from_public_companies(company_id)
+                except Exception as e:
+                    current_app.logger.warning("Auto sync companies to customers failed for cid=%s: %s", company_id, e)
+            else:
+                current_app.logger.warning("Blocked attempt by non-platform company %s to sync public.companies", company_id)
+
         customers = db_service.list_customers(company_id, include_inactive=include_inactive) or []
         current_app.logger.info(
             "GET /companies/%s/customers -> %d rows (include_inactive=%s)",
@@ -9965,6 +9982,29 @@ def api_company_customers(company_id: int):
     except Exception as ex:
         current_app.logger.exception("Error inserting customer: %s", ex)
         return jsonify({"error": "Failed to create customer"}), 500
+
+@app.route("/api/companies/<int:company_id>/customers/sync-from-companies", methods=["POST"])
+@require_auth
+def sync_customers_from_companies(company_id: int):
+    """Sync all active companies from public.companies into this company's customers.
+    Strictly restricted to the platform billing company (e.g. company 1)."""
+    current_user = getattr(g, "current_user", None)
+    if not current_user or current_user.get("company_id") != company_id:
+        return jsonify({"error": "Not authorised for this company"}), 403
+
+    platform_cid = int(os.environ.get("PLATFORM_BILLING_COMPANY_ID", 1))
+    if int(company_id) != platform_cid:
+        return jsonify({
+            "error": "Forbidden: Only the platform operating company is permitted to sync platform companies."
+        }), 403
+
+    try:
+        result = db_service.sync_customers_from_public_companies(company_id)
+        return jsonify(result), 200
+    except Exception as ex:
+        current_app.logger.exception("Error syncing customers from companies: %s", ex)
+        return jsonify({"error": "Failed to sync customers from companies", "detail": str(ex)}), 500
+
     
 @app.route(
     "/api/companies/<int:company_id>/customers/<int:customer_id>",

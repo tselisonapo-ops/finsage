@@ -76,6 +76,10 @@ export const posApi = {
         return postJson(`${base()}/sales/${saleId}/complete`, payload);
     },
 
+    emailReceipt(saleId, payload = {}) {
+        return postJson(`${base()}/sales/${saleId}/email-receipt`, payload);
+    },
+
     createQuote(payload) {
         return postJson(`${base()}/quotes`, payload);
     },

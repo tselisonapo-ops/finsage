@@ -35,4 +35,35 @@ export const api = {
   put:    (path, body) => request('PUT', path, body),
   patch:  (path, body) => request('PATCH', path, body),
   delete: (path) => request('DELETE', path),
+  downloadBlob: async (path, filename = 'document.pdf') => {
+    const token = getToken()
+    const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    const res = await fetch(`${API_BASE}${path}`, { headers })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `Download failed (${res.status})`)
+    }
+    const blob = await res.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => window.URL.revokeObjectURL(url), 1000)
+  },
+  openBlob: async (path) => {
+    const token = getToken()
+    const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    const res = await fetch(`${API_BASE}${path}`, { headers })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `Failed to open document (${res.status})`)
+    }
+    const blob = await res.blob()
+    const url = window.URL.createObjectURL(blob)
+    window.open(url, '_blank')
+    setTimeout(() => window.URL.revokeObjectURL(url), 60000)
+  },
 }

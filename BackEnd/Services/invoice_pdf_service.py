@@ -187,9 +187,30 @@ def _load_logo(company: dict, max_w=32 * mm, max_h=32 * mm):
 # Main builder
 # -------------------------------------------------
 
-def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> bytes:
+def _build_document(title: str, doc_obj: dict, company: dict | None = None, template: dict | None = None) -> bytes:
     company = company or {}
     doc_obj = doc_obj or {}
+
+    # Resolve custom or default template
+    if not template:
+        template = doc_obj.get("template") or doc_obj.get("invoice_template") or company.get("invoice_template") or {}
+        if not template and company.get("id"):
+            try:
+                from BackEnd.Services.db_service import db_service
+                template = db_service.get_invoice_template(company["id"]) or {}
+            except Exception:
+                template = {}
+
+    primary_hex = template.get("primary_color") or "#0F2A3D"
+    accent_hex = template.get("accent_color") or "#2FA4A9"
+    try:
+        primary_color = colors.HexColor(primary_hex)
+    except Exception:
+        primary_color = colors.HexColor("#0F2A3D")
+    try:
+        accent_color = colors.HexColor(accent_hex)
+    except Exception:
+        accent_color = colors.HexColor("#2FA4A9")
 
     buffer = BytesIO()
     pdf = SimpleDocTemplate(
@@ -213,7 +234,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         fontSize=18,
         leading=22,
         alignment=TA_CENTER,
-        textColor=colors.HexColor("#0F2A3D"),
+        textColor=primary_color,
         spaceAfter=0,
         spaceBefore=0,
     ))
@@ -236,7 +257,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         fontName="Helvetica-Bold",
         fontSize=8,
         leading=10,
-        textColor=colors.HexColor("#0F2A3D"),
+        textColor=primary_color,
     ))
     styles.add(ParagraphStyle(
         name="BoxTitle",
@@ -244,7 +265,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         fontName="Helvetica-Bold",
         fontSize=8.5,
         leading=10,
-        textColor=colors.HexColor("#0F2A3D"),
+        textColor=primary_color,
         spaceAfter=4,
     ))
     styles.add(ParagraphStyle(
@@ -269,7 +290,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         fontName="Helvetica-Bold",
         fontSize=9,
         leading=12,
-        textColor=colors.HexColor("#0F2A3D"),
+        textColor=primary_color,
     ))
     styles.add(ParagraphStyle(
         name="BodyTextBoldRight",
@@ -282,7 +303,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         fontName="Helvetica-Bold",
         fontSize=12,
         leading=14,
-        textColor=colors.HexColor("#2FA4A9"),
+        textColor=accent_color,
         alignment=TA_RIGHT,
     ))
     styles.add(ParagraphStyle(
@@ -352,11 +373,11 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     vat_total = _money(doc_obj.get("vat_amount") or doc_obj.get("vat_total") or 0)
     grand_total = _money(doc_obj.get("total_amount") or doc_obj.get("total") or 0)
 
-    bank_name = _safe(doc_obj.get("bank_name"))
-    account_name = _safe(doc_obj.get("account_name"))
-    account_number = _safe(doc_obj.get("account_number"))
-    branch_code = _safe(doc_obj.get("branch_code"))
-    swift_code = _safe(doc_obj.get("swift_code"))
+    bank_name = _safe(doc_obj.get("bank_name") or template.get("bank_name"))
+    account_name = _safe(doc_obj.get("account_name") or template.get("bank_account_name"))
+    account_number = _safe(doc_obj.get("account_number") or template.get("bank_account_number"))
+    branch_code = _safe(doc_obj.get("branch_code") or template.get("bank_branch_code"))
+    swift_code = _safe(doc_obj.get("swift_code") or template.get("bank_swift_bic"))
 
     # consistent widths
     gap = 4 * mm
@@ -367,7 +388,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     # top bars
     top_bar = Table([[""]], colWidths=[content_w], rowHeights=[12 * mm])
     top_bar.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#0F2A3D")),
+        ("BACKGROUND", (0, 0), (-1, -1), primary_color),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
@@ -377,7 +398,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
 
     accent_bar = Table([[""]], colWidths=[content_w], rowHeights=[2 * mm])
     accent_bar.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#2FA4A9")),
+        ("BACKGROUND", (0, 0), (-1, -1), accent_color),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
@@ -471,7 +492,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
 
     top_sep = Table([[""]], colWidths=[content_w], rowHeights=[1.2 * mm])
     top_sep.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#2FA4A9")),
+        ("BACKGROUND", (0, 0), (-1, -1), accent_color),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
@@ -775,13 +796,13 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
 # -------------------------------------------------
 # Public entry points
 # -------------------------------------------------
-def generate_invoice_pdf(invoice, company=None) -> bytes:
-    return _build_document("Invoice", invoice or {}, company or {})
+def generate_invoice_pdf(invoice, company=None, template=None) -> bytes:
+    return _build_document("Invoice", invoice or {}, company or {}, template=template)
 
 
-def generate_quote_pdf(quote, company=None) -> bytes:
-    return _build_document("Quote", quote or {}, company or {})
+def generate_quote_pdf(quote, company=None, template=None) -> bytes:
+    return _build_document("Quote", quote or {}, company or {}, template=template)
 
 
-def generate_receipt_pdf(receipt, company=None) -> bytes:
-    return _build_document("Receipt", receipt or {}, company or {})
+def generate_receipt_pdf(receipt, company=None, template=None) -> bytes:
+    return _build_document("Receipt", receipt or {}, company or {}, template=template)

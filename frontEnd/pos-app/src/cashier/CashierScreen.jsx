@@ -60,7 +60,7 @@ export function CashierPage() {
   const [attendance, setAttendance] = useState(null);
   const [clockedIn, setClockedIn] = useState(false);
   const [receiptSettings, setReceiptSettings] = useState({});
-  
+
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
 
@@ -77,6 +77,86 @@ export function CashierPage() {
     { payment_method: "cash", amount: "" },
     { payment_method: "card", amount: "" },
   ]);
+
+  // Digital Delivery (WhatsApp & Email) + Numpad
+  const [customerWhatsapp, setCustomerWhatsapp] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [showNumpad, setShowNumpad] = useState(true);
+  const [completedSaleModal, setCompletedSaleModal] = useState(null);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailStatus, setEmailStatus] = useState("");
+
+  useEffect(() => {
+    if (selectedCustomer) {
+      if (selectedCustomer.phone) setCustomerWhatsapp(selectedCustomer.phone);
+      if (selectedCustomer.email) setCustomerEmail(selectedCustomer.email);
+    }
+  }, [selectedCustomer]);
+
+  function handleNumpadKey(key) {
+    if (key === "C") {
+      setAmountTendered("");
+    } else if (key === "backspace" || key === "⌫") {
+      setAmountTendered((prev) => (prev ? String(prev).slice(0, -1) : ""));
+    } else if (key === "exact") {
+      setAmountTendered(String(Number(totals.gross || 0).toFixed(2)));
+    } else if (key.startsWith("+")) {
+      const addVal = Number(key.replace("+", ""));
+      const currentVal = Number(amountTendered || totals.gross || 0);
+      setAmountTendered(String((currentVal + addVal).toFixed(2)));
+    } else if (key === ".") {
+      if (!String(amountTendered).includes(".")) {
+        setAmountTendered((prev) => (prev ? String(prev) + "." : "0."));
+      }
+    } else {
+      setAmountTendered((prev) => (prev === "0" ? String(key) : String(prev || "") + key));
+    }
+  }
+
+  function getWhatsappUrl(saleInfo) {
+    if (!saleInfo) return "";
+    let rawPhone = String(saleInfo.whatsapp || "").replace(/[^0-9]/g, "");
+    if (!rawPhone) return "";
+    if (rawPhone.startsWith("0") && rawPhone.length === 10) {
+      rawPhone = "27" + rawPhone.slice(1);
+    }
+    const linesSummary = (saleInfo.lines || [])
+      .map((l) => `• ${l.name || l.item_name || "Item"} x${l.qty || 1} - ${money(l.gross_amount || (l.qty * l.unit_price))}`)
+      .join("\n");
+    const msg =
+`🧾 *TAX INVOICE / RECEIPT*
+*${company?.name || "FinSage Store"}*
+-----------------------------
+*Receipt #:* ${saleInfo.saleNo}
+*Date:* ${new Date().toLocaleDateString()}
+*Customer:* ${saleInfo.customerName}
+
+*Items:*
+${linesSummary}
+-----------------------------
+*TOTAL PAID:* ${money(saleInfo.gross)} (${(saleInfo.paymentMethod || "CASH").toUpperCase()})
+
+Thank you for your business!`;
+
+    return `https://wa.me/${rawPhone}?text=${encodeURIComponent(msg)}`;
+  }
+
+  async function sendCompletedSaleEmail(targetEmail) {
+    if (!completedSaleModal || !targetEmail) return;
+    setEmailSending(true);
+    setEmailStatus("Sending receipt email...");
+    try {
+      await posApi.emailReceipt(completedSaleModal.saleId, {
+        email: targetEmail,
+        customer_name: completedSaleModal.customerName,
+      });
+      setEmailStatus("✅ Receipt emailed successfully!");
+    } catch (err) {
+      setEmailStatus("❌ Failed to email: " + (err?.message || "Error"));
+    } finally {
+      setEmailSending(false);
+    }
+  }
 
   // ============================================================
   // COMMAND BAR (combined hero + KPIs) — pin / collapse / peek
@@ -897,12 +977,38 @@ export function CashierPage() {
 
       printReceipt(completedSaleNo);
 
+      // Populate completed sale details for WhatsApp & Email digital dispatch
+      const finishedSale = {
+        saleId,
+        saleNo: completedSaleNo,
+        gross: Number(totals.gross || totals.total || 0),
+        lines: [...cart],
+        customerName: selectedCustomer?.customer_name || "Walk-in Customer",
+        whatsapp: customerWhatsapp,
+        email: customerEmail,
+        paymentMethod: selectedPaymentMethod || "cash",
+      };
+      setCompletedSaleModal(finishedSale);
+      setEmailStatus("");
+
+      // Background email dispatch if customer email was provided
+      if (customerEmail && customerEmail.includes("@")) {
+        posApi.emailReceipt(saleId, {
+          email: customerEmail,
+          customer_name: finishedSale.customerName,
+        })
+          .then(() => setEmailStatus(`✅ Invoice emailed to ${customerEmail}`))
+          .catch((e) => console.warn("POS emailReceipt background warning:", e));
+      }
+
       setMessage(`Sale ${completedSaleNo} completed successfully.`);
 
       // Reset sale
       setCart([]);
       setSelectedCustomer(null);
       setSelectedPaymentMethod("");
+      setCustomerWhatsapp("");
+      setCustomerEmail("");
       setAmountTendered("");
 
       setSplitPayments([
@@ -1732,6 +1838,112 @@ export function CashierPage() {
                 </div>
               </div>
 
+              {/* On-Screen NUMPAD + Quick Cash Chips */}
+              <div className="pos-numpad-container">
+                <div className="pos-numpad-header">
+                  <span>Numeric Keypad (Touch / POS)</span>
+                  <button
+                    type="button"
+                    className="pos-numpad-toggle-btn"
+                    onClick={() => setShowNumpad(!showNumpad)}
+                  >
+                    {showNumpad ? "Hide Numpad" : "Show Numpad"}
+                  </button>
+                </div>
+
+                <div className="pos-quick-tender-chips">
+                  <button
+                    type="button"
+                    className="pos-chip-btn exact"
+                    onClick={() => handleNumpadKey("exact")}
+                  >
+                    Exact
+                  </button>
+                  <button
+                    type="button"
+                    className="pos-chip-btn"
+                    onClick={() => handleNumpadKey("+10")}
+                  >
+                    +10
+                  </button>
+                  <button
+                    type="button"
+                    className="pos-chip-btn"
+                    onClick={() => handleNumpadKey("+20")}
+                  >
+                    +20
+                  </button>
+                  <button
+                    type="button"
+                    className="pos-chip-btn"
+                    onClick={() => handleNumpadKey("+50")}
+                  >
+                    +50
+                  </button>
+                  <button
+                    type="button"
+                    className="pos-chip-btn"
+                    onClick={() => handleNumpadKey("+100")}
+                  >
+                    +100
+                  </button>
+                  <button
+                    type="button"
+                    className="pos-chip-btn"
+                    onClick={() => handleNumpadKey("+200")}
+                  >
+                    +200
+                  </button>
+                </div>
+
+                {showNumpad && (
+                  <div className="pos-numpad-grid">
+                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("7")}>7</button>
+                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("8")}>8</button>
+                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("9")}>9</button>
+
+                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("4")}>4</button>
+                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("5")}>5</button>
+                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("6")}>6</button>
+
+                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("1")}>1</button>
+                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("2")}>2</button>
+                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("3")}>3</button>
+
+                    <button type="button" className="pos-num-btn danger" onClick={() => handleNumpadKey("C")}>C</button>
+                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("0")}>0</button>
+                    <button type="button" className="pos-num-btn accent" onClick={() => handleNumpadKey("⌫")}>⌫</button>
+
+                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("00")}>00</button>
+                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey(".")}>.</button>
+                    <button type="button" className="pos-num-btn accent" onClick={() => handleNumpadKey("exact")}>Exact</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Digital Invoice / Receipt Delivery (WhatsApp & Email) */}
+              <div className="pos-digital-delivery-card">
+                <h4>📱 Send Customer Invoice / Receipt</h4>
+                <div className="pos-delivery-input-row">
+                  <label>Customer WhatsApp Number</label>
+                  <input
+                    type="tel"
+                    placeholder="e.g. 082 123 4567 or +27..."
+                    value={customerWhatsapp}
+                    onChange={(e) => setCustomerWhatsapp(e.target.value)}
+                  />
+                </div>
+                <div className="pos-delivery-input-row">
+                  <label>Customer Email Address</label>
+                  <input
+                    type="email"
+                    placeholder="customer@example.com"
+                    value={customerEmail}
+                    onChange={(e) => setCustomerEmail(e.target.value)}
+                  />
+                </div>
+              </div>
+
               <div className="payment-method-title">
                 Pay with {selectedPaymentMethod || "..."}
               </div>
@@ -2016,6 +2228,82 @@ export function CashierPage() {
               </button>
               <button className="success" onClick={signIn}>
                 Sign In
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sale Completion & Digital Dispatch Modal (WhatsApp / Email / Print) */}
+      {completedSaleModal && (
+        <div className="pos-sale-complete-overlay">
+          <div className="pos-sale-complete-modal">
+            <div className="pos-complete-check-icon">✓</div>
+            <h2>Sale Completed!</h2>
+            <div className="pos-complete-sub">
+              Invoice #{completedSaleModal.saleNo} • {completedSaleModal.customerName}
+            </div>
+
+            <div className="pos-complete-amount-box">
+              <span>Total Paid ({completedSaleModal.paymentMethod?.toUpperCase()})</span>
+              <strong>{money(completedSaleModal.gross)}</strong>
+            </div>
+
+            {emailStatus && (
+              <div style={{ marginBottom: 12, fontSize: "0.85rem", color: emailStatus.includes("✅") ? "#16a34a" : "#dc2626" }}>
+                {emailStatus}
+              </div>
+            )}
+
+            <div className="pos-complete-actions">
+              {completedSaleModal.whatsapp ? (
+                <a
+                  href={getWhatsappUrl(completedSaleModal)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="pos-action-btn whatsapp"
+                >
+                  💬 Open WhatsApp Invoice (wa.me)
+                </a>
+              ) : (
+                <div style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                  (No WhatsApp number was entered for this sale)
+                </div>
+              )}
+
+              {completedSaleModal.email ? (
+                <button
+                  type="button"
+                  className="pos-action-btn email"
+                  disabled={emailSending}
+                  onClick={() => sendCompletedSaleEmail(completedSaleModal.email)}
+                >
+                  ✉️ {emailSending ? "Sending..." : `Email PDF Receipt to ${completedSaleModal.email}`}
+                </button>
+              ) : (
+                <div style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                  (No Email address was entered for this sale)
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="pos-action-btn print"
+                onClick={() => printReceipt(completedSaleModal.saleNo)}
+              >
+                🖨️ Print Slip / Receipt
+              </button>
+
+              <button
+                type="button"
+                className="pos-action-btn next"
+                onClick={() => {
+                  setCompletedSaleModal(null);
+                  setEmailStatus("");
+                  startNewSale();
+                }}
+              >
+                ➕ Start Next Sale
               </button>
             </div>
           </div>

@@ -425,6 +425,81 @@ def api_pos_complete_sale(cid: int, sale_id: int):
             500,
             ex,
         )
+
+@pos_bp.route("/api/companies/<int:cid>/pos/sales/<int:sale_id>/email-receipt", methods=["POST", "OPTIONS"])
+@require_auth
+def api_pos_email_receipt(cid: int, sale_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    body = request.get_json(silent=True) or {}
+    to_email = (body.get("email") or "").strip()
+    if not to_email or "@" not in to_email:
+        return _err("Valid customer email address is required.", 400)
+
+    try:
+        from BackEnd.Services.emailer import send_mail
+        from BackEnd.Services.invoice_pdf_service import generate_receipt_pdf
+        from datetime import date
+
+        sale_data = db_service.pos_get_sale_receipt_data(cid, sale_id)
+        if not sale_data:
+            return _err("Sale record not found.", 404)
+
+        company = db_service.get_company(cid) or {}
+        branding = db_service.get_company_branding(cid) or {}
+        company["branding"] = branding
+
+        sale_no = sale_data.get("sale_no") or f"SALE-{sale_id}"
+        customer_name = body.get("customer_name") or sale_data.get("customer_name") or "Valued Customer"
+
+        # Generate receipt PDF attachment
+        pdf_bytes = generate_receipt_pdf(sale_data, company=company)
+        attachments = [(f"Receipt-{sale_no}.pdf", pdf_bytes, "application/pdf")]
+
+        company_name = company.get("name") or "FinSage Store"
+        subject = f"Your Sales Receipt #{sale_no} from {company_name}"
+        html_body = f"""
+        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #0F2A3D;">Thank you for your purchase!</h2>
+            <p>Dear {customer_name},</p>
+            <p>Your transaction has been processed successfully. Please find attached your official sales receipt / tax invoice for transaction <strong>#{sale_no}</strong>.</p>
+            <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                <tr style="border-bottom: 2px solid #ddd;">
+                    <th style="text-align: left; padding: 8px;">Receipt No</th>
+                    <td style="padding: 8px;">{sale_no}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <th style="text-align: left; padding: 8px;">Date</th>
+                    <td style="padding: 8px;">{sale_data.get('sale_date') or str(date.today())}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <th style="text-align: left; padding: 8px;">Total Paid</th>
+                    <td style="padding: 8px;"><strong>{sale_data.get('currency', '')} {float(sale_data.get('gross_amount') or 0):,.2f}</strong></td>
+                </tr>
+            </table>
+            <p>If you have any questions about this purchase, please contact {company_name}.</p>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+            <small style="color: #888;">Generated securely via FinSage Business Suite.</small>
+        </div>
+        """
+
+        send_mail(
+            to_email=to_email,
+            subject=subject,
+            html_body=html_body,
+            attachments=attachments
+        )
+
+        return _ok({"message": f"Receipt emailed successfully to {to_email}", "sent_to": to_email}, 200)
+
+    except Exception as ex:
+        current_app.logger.exception(f"Failed to email POS receipt for sale {sale_id}")
+        return _err(f"Failed to send email: {str(ex)}", 500, ex)
     
 @pos_bp.route("/api/companies/<int:cid>/pos/reports/<path:report_key>", methods=["GET", "OPTIONS"])
 @require_auth

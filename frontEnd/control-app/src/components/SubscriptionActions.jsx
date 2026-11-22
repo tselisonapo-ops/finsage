@@ -9,19 +9,15 @@ import {
   Loader2,
   Wallet,
   Layers,
+  RotateCcw,
+  Download,
+  Calendar,
 } from 'lucide-react'
 
 import { api } from '../api/client'
 
-// The control subscriptions blueprint is registered at
-// /api/control/subscriptions. CustomerSubscription.jsx reaches the
-// customers blueprint with a bare '/customers/...' path, so this api
-// client's baseURL already includes /api/control. If any call here
-// 404s, THIS constant is the first thing to check.
 const SUB_BASE = '/subscriptions'
 
-// Company-tier plan codes (matches plans_seed.py). Free is intentionally
-// absent — leaving a paid plan goes through "Cancel at period end".
 const PLAN_OPTIONS = [
   { code: 'business', label: 'Business' },
   { code: 'premium', label: 'Premium' },
@@ -154,7 +150,16 @@ export default function SubscriptionActions({
       ? subscription.plan_code
       : 'premium'
   )
+  const [billingInterval, setBillingInterval] = useState('monthly')
   const [trialDays, setTrialDays] = useState(14)
+  const [trialReason, setTrialReason] = useState('')
+  const [actionReason, setActionReason] = useState('')
+
+  // Settle states
+  const [paidTarget, setPaidTarget] = useState(null)
+  const [paymentRef, setPaymentRef] = useState('')
+  const [paymentNote, setPaymentNote] = useState('')
+
   const [failTarget, setFailTarget] = useState(null)
   const [failReason, setFailReason] = useState('')
 
@@ -170,9 +175,7 @@ export default function SubscriptionActions({
   )
 
   async function run(key, fn) {
-    if (busy) {
-      return
-    }
+    if (busy) return
 
     setBusy(key)
     setError('')
@@ -196,18 +199,39 @@ export default function SubscriptionActions({
     run('trial-extend', async () => {
       await post('/trial/extend', {
         days: trialDays,
-        reason: 'Extended from control panel',
+        reason: trialReason.trim() || 'Extended from control panel',
       })
+      setTrialReason('')
     })
 
   const planAction = (action) =>
     run(`plan-${action}`, async () => {
-      await post('/plan', { action, plan_code: planCode })
+      await post('/plan', {
+        action,
+        plan_code: planCode,
+        billing_interval: billingInterval,
+        reason: actionReason.trim() || undefined,
+      })
+      setActionReason('')
+    })
+
+  const undoCancellation = () =>
+    run('undo-cancel', async () => {
+      await post('/uncancel', {
+        reason: actionReason.trim() || 'Cancellation reversed from control panel',
+      })
+      setActionReason('')
     })
 
   const settlePaid = (billingId) =>
     run(`paid-${billingId}`, async () => {
-      await post(`/billing/${billingId}/confirm`, {})
+      await post(`/billing/${billingId}/confirm`, {
+        payment_reference: paymentRef.trim() || null,
+        note: paymentNote.trim() || null,
+      })
+      setPaidTarget(null)
+      setPaymentRef('')
+      setPaymentNote('')
     })
 
   const settleFailed = (billingId) =>
@@ -218,6 +242,17 @@ export default function SubscriptionActions({
       setFailTarget(null)
       setFailReason('')
     })
+
+  const downloadPdf = async (billingId, ref) => {
+    try {
+      await api.downloadBlob(
+        `/subscriptions/${companyId}/billing/${billingId}/invoice-pdf`,
+        `Invoice-${ref || billingId}.pdf`
+      )
+    } catch (err) {
+      setError(err?.message || 'Failed to download invoice PDF')
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -239,168 +274,249 @@ export default function SubscriptionActions({
       {/* Trial window */}
       {status === 'trialing' && (
         <SectionCard title="Trial window" icon={CalendarClock}>
-          <div
-            className="
-              flex
-              flex-col
-              sm:flex-row
-              sm:items-center
-              gap-3
-            "
-          >
-            <div className="flex items-center gap-2">
-              {TRIAL_CHIPS.map((days) => (
-                <button
-                  key={days}
-                  type="button"
-                  onClick={() => setTrialDays(days)}
-                  className={`
-                    px-3 py-1.5
-                    rounded-lg
-                    text-sm
-                    border
-                    transition-colors
-                    ${
-                      trialDays === days
-                        ? 'border-accent text-accent bg-accent/10'
-                        : 'border-surface-600 text-surface-300 hover:bg-surface-700'
-                    }
-                  `}
-                >
-                  +{days}d
-                </button>
-              ))}
+          <div className="space-y-3">
+            <div
+              className="
+                flex
+                flex-col
+                sm:flex-row
+                sm:items-center
+                gap-3
+              "
+            >
+              <div className="flex items-center gap-2">
+                {TRIAL_CHIPS.map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    onClick={() => setTrialDays(days)}
+                    className={`
+                      px-3 py-1.5
+                      rounded-lg
+                      text-sm
+                      border
+                      transition-colors
+                      ${
+                        trialDays === days
+                          ? 'border-accent text-accent bg-accent/10'
+                          : 'border-surface-600 text-surface-300 hover:bg-surface-700'
+                      }
+                    `}
+                  >
+                    +{days}d
+                  </button>
+                ))}
+              </div>
+
+              <input
+                type="text"
+                value={trialReason}
+                onChange={(e) => setTrialReason(e.target.value)}
+                placeholder="Reason / Note (e.g. Sales extension)"
+                className="flex-1 bg-surface-900 border border-surface-600 rounded-lg px-3 py-1.5 text-sm text-surface-100 placeholder:text-surface-500 focus:outline-none focus:border-accent"
+              />
+
+              <ActionButton
+                busyKey="trial-extend"
+                busy={busy}
+                onClick={extendTrial}
+                tone="primary"
+              >
+                Extend trial
+              </ActionButton>
             </div>
 
-            <ActionButton
-              busyKey="trial-extend"
-              busy={busy}
-              onClick={extendTrial}
-              tone="primary"
-            >
-              Extend trial
-            </ActionButton>
-
-            <div className="text-xs text-surface-400 sm:ml-auto">
-              Trial ends {subscription.trial_ends_at || '—'}
+            <div className="text-xs text-surface-400">
+              Current trial ends: {subscription.trial_ends_at || '—'}
             </div>
           </div>
         </SectionCard>
       )}
 
-      {/* Plan changes */}
-      <SectionCard title="Plan changes" icon={Layers}>
-        <div
-          className="
-            flex
-            flex-col
-            sm:flex-row
-            sm:items-center
-            gap-3
-          "
-        >
-          <select
-            value={planCode}
-            onChange={(event) => setPlanCode(event.target.value)}
+      {/* Plan changes & Lifecycle */}
+      <SectionCard title="Plan changes & Lifecycle" icon={Layers}>
+        <div className="space-y-4">
+          <div
             className="
-              bg-surface-900
-              border border-surface-600
-              rounded-lg
-              px-3 py-2
-              text-sm
-              text-surface-100
+              flex
+              flex-wrap
+              items-center
+              gap-3
             "
           >
-            {PLAN_OPTIONS.map((plan) => (
-              <option key={plan.code} value={plan.code}>
-                {plan.label}
-              </option>
-            ))}
-          </select>
+            <div>
+              <label className="block text-xs text-surface-400 mb-1">Target Plan</label>
+              <select
+                value={planCode}
+                onChange={(event) => setPlanCode(event.target.value)}
+                className="
+                  bg-surface-900
+                  border border-surface-600
+                  rounded-lg
+                  px-3 py-2
+                  text-sm
+                  text-surface-100
+                "
+              >
+                {PLAN_OPTIONS.map((plan) => (
+                  <option key={plan.code} value={plan.code}>
+                    {plan.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          {status === 'trialing' && (
-            <ActionButton
-              busyKey="plan-commit"
-              busy={busy}
-              onClick={() => planAction('commit')}
-              tone="primary"
-            >
-              Commit plan
-            </ActionButton>
-          )}
+            <div>
+              <label className="block text-xs text-surface-400 mb-1">Billing Interval</label>
+              <div className="inline-flex rounded-lg border border-surface-600 bg-surface-900 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setBillingInterval('monthly')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    billingInterval === 'monthly'
+                      ? 'bg-accent text-white'
+                      : 'text-surface-400 hover:text-surface-200'
+                  }`}
+                >
+                  Monthly
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBillingInterval('annual')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    billingInterval === 'annual'
+                      ? 'bg-accent text-white'
+                      : 'text-surface-400 hover:text-surface-200'
+                  }`}
+                >
+                  Annual (Yearly)
+                </button>
+              </div>
+            </div>
 
-          {(status === 'active' || status === 'grace') && (
-            <>
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-xs text-surface-400 mb-1">Reason / Note (Audited)</label>
+              <input
+                type="text"
+                value={actionReason}
+                onChange={(e) => setActionReason(e.target.value)}
+                placeholder="Reason for change..."
+                className="w-full bg-surface-900 border border-surface-600 rounded-lg px-3 py-2 text-sm text-surface-100 placeholder:text-surface-500 focus:outline-none focus:border-accent"
+              />
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            {status === 'trialing' && (
               <ActionButton
-                busyKey="plan-upgrade"
+                busyKey="plan-commit"
                 busy={busy}
-                onClick={() => planAction('upgrade')}
+                onClick={() => planAction('commit')}
                 tone="primary"
-                disabled={selectedRank <= currentRank}
               >
-                <ArrowUpCircle size={15} />
-                Upgrade now
+                Commit plan now
               </ActionButton>
+            )}
 
+            {(status === 'active' || status === 'grace') && (
+              <>
+                <ActionButton
+                  busyKey="plan-upgrade"
+                  busy={busy}
+                  onClick={() => planAction('upgrade')}
+                  tone="primary"
+                  disabled={selectedRank <= currentRank}
+                >
+                  <ArrowUpCircle size={15} />
+                  Upgrade now (Prorated)
+                </ActionButton>
+
+                <ActionButton
+                  busyKey="plan-downgrade"
+                  busy={busy}
+                  onClick={() => planAction('downgrade')}
+                  tone="neutral"
+                  disabled={selectedRank >= currentRank}
+                >
+                  <ArrowDownCircle size={15} />
+                  Downgrade at period end
+                </ActionButton>
+              </>
+            )}
+
+            {/* Reactivate cancelled or expired */}
+            {(status === 'cancelled' || status === 'expired') && (
               <ActionButton
-                busyKey="plan-downgrade"
+                busyKey="plan-commit"
                 busy={busy}
-                onClick={() => planAction('downgrade')}
-                tone="neutral"
-                disabled={selectedRank >= currentRank}
+                onClick={() => planAction('commit')}
+                tone="success"
               >
-                <ArrowDownCircle size={15} />
-                Downgrade at period end
+                <RotateCcw size={15} />
+                Reactivate & Commit Plan
               </ActionButton>
-            </>
+            )}
+
+            {/* Undo scheduled cancellation */}
+            {cancelEffectiveAt && (
+              <ActionButton
+                busyKey="undo-cancel"
+                busy={busy}
+                onClick={undoCancellation}
+                tone="success"
+              >
+                <RotateCcw size={15} />
+                Undo Cancellation
+              </ActionButton>
+            )}
+
+            {/* Cancel at period end */}
+            {status !== 'cancelled' && (
+              <ActionButton
+                busyKey="plan-cancel"
+                busy={busy}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      'Cancel this subscription at the end of the current period?'
+                    )
+                  ) {
+                    planAction('cancel')
+                  }
+                }}
+                tone="danger"
+              >
+                <Ban size={15} />
+                Cancel at period end
+              </ActionButton>
+            )}
+          </div>
+
+          {cancelEffectiveAt && status !== 'cancelled' && (
+            <div className="text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg p-3">
+              Cancellation is scheduled for {cancelEffectiveAt}. The company retains active access until then. Click &ldquo;Undo Cancellation&rdquo; to restore.
+            </div>
           )}
 
-          {status !== 'cancelled' && (
-            <ActionButton
-              busyKey="plan-cancel"
-              busy={busy}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    'Cancel this subscription at the end of the current period?'
-                  )
-                ) {
-                  planAction('cancel')
-                }
-              }}
-              tone="danger"
-            >
-              <Ban size={15} />
-              Cancel
-            </ActionButton>
+          {status === 'cancelled' && (
+            <div className="text-xs text-surface-400 bg-surface-900/60 border border-surface-600 rounded-lg p-3">
+              Subscription is currently cancelled. Select a plan above and click &ldquo;Reactivate &amp; Commit Plan&rdquo; to immediately put the company back on a live subscription.
+            </div>
           )}
         </div>
-
-        {cancelEffectiveAt && status !== 'cancelled' && (
-          <div className="text-xs text-surface-400 mt-3">
-            Cancellation scheduled — runs until {cancelEffectiveAt},
-            then the daily job moves the company to free.
-          </div>
-        )}
-
-        {status === 'cancelled' && (
-          <div className="text-xs text-surface-400 mt-3">
-            Subscription cancelled. Reactivation is not exposed yet —
-            use a fresh commit once the customer is ready.
-          </div>
-        )}
       </SectionCard>
 
       {/* Settlement queue */}
       <SectionCard title="Awaiting settlement" icon={Wallet}>
         {openRows.length === 0 ? (
           <div className="text-sm text-surface-400 py-1">
-            Nothing awaiting settlement — no pending or failed billing
-            rows.
+            Nothing awaiting settlement — all billing rows are settled.
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {openRows.map((item) => {
+              const isPaying = paidTarget === item.billing_id
               const isFailing = failTarget === item.billing_id
 
               return (
@@ -422,39 +538,57 @@ export default function SubscriptionActions({
                       gap-3
                     "
                   >
-                    <div className="min-w-0">
-                      <div
-                        className="
-                          font-medium
-                          text-surface-100
-                          truncate
-                        "
-                      >
-                        {item.invoice_reference ||
-                          item.billing_reference ||
-                          `Billing #${item.billing_id}`}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-surface-100">
+                          {item.invoice_reference ||
+                            item.billing_reference ||
+                            `Billing #${item.billing_id}`}
+                        </span>
+                        <Pill value={item.billing_status} />
                       </div>
 
-                      <div className="text-xs text-surface-400 mt-1">
-                        {item.currency} {item.amount}
-                        {item.due_at ? ` · due ${item.due_at}` : ''}
+                      <div className="text-xs text-surface-400 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                        <span>{item.currency} {Number(item.amount).toLocaleString()}</span>
+                        {item.due_at && <span>Due: {item.due_at.substring(0, 10)}</span>}
+                        {item.failure_reason && (
+                          <span className="text-error font-medium">Failed: {item.failure_reason}</span>
+                        )}
                       </div>
                     </div>
-
-                    <Pill value={item.billing_status} />
 
                     <div
                       className="
                         flex
+                        flex-wrap
                         items-center
                         gap-2
-                        sm:ml-auto
+                        shrink-0
                       "
                     >
+                      <button
+                        type="button"
+                        onClick={() => downloadPdf(item.billing_id, item.invoice_reference || item.billing_reference)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-surface-500 text-surface-300 hover:text-surface-100 hover:bg-surface-700 transition-colors"
+                        title="Download PDF Invoice"
+                      >
+                        <Download size={13} />
+                        Invoice PDF
+                      </button>
+
                       <ActionButton
                         busyKey={`paid-${item.billing_id}`}
                         busy={busy}
-                        onClick={() => settlePaid(item.billing_id)}
+                        onClick={() => {
+                          if (isPaying) {
+                            setPaidTarget(null)
+                          } else {
+                            setPaidTarget(item.billing_id)
+                            setFailTarget(null)
+                            setPaymentRef('')
+                            setPaymentNote('')
+                          }
+                        }}
                         tone="success"
                       >
                         <CheckCircle2 size={15} />
@@ -469,6 +603,7 @@ export default function SubscriptionActions({
                             setFailTarget(null)
                           } else {
                             setFailTarget(item.billing_id)
+                            setPaidTarget(null)
                             setFailReason('')
                           }
                         }}
@@ -480,44 +615,78 @@ export default function SubscriptionActions({
                     </div>
                   </div>
 
+                  {/* Inline Mark Paid Form */}
+                  {isPaying && (
+                    <div className="mt-3 p-3 bg-surface-950/60 rounded-lg border border-success/30 space-y-3">
+                      <div className="text-xs font-medium text-success">
+                        Confirm Payment Settlement
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={paymentRef}
+                          onChange={(e) => setPaymentRef(e.target.value)}
+                          placeholder="Payment reference (EFT / Bank / Mobile money ref)"
+                          className="bg-surface-900 border border-surface-600 rounded-lg px-3 py-2 text-sm text-surface-100 placeholder:text-surface-500 focus:outline-none focus:border-success"
+                        />
+                        <input
+                          type="text"
+                          value={paymentNote}
+                          onChange={(e) => setPaymentNote(e.target.value)}
+                          placeholder="Settlement note / memo (optional)"
+                          className="bg-surface-900 border border-surface-600 rounded-lg px-3 py-2 text-sm text-surface-100 placeholder:text-surface-500 focus:outline-none focus:border-success"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setPaidTarget(null)}
+                          className="px-3 py-1.5 rounded-lg text-xs text-surface-400 hover:text-surface-200"
+                        >
+                          Cancel
+                        </button>
+                        <ActionButton
+                          busyKey={`paid-${item.billing_id}`}
+                          busy={busy}
+                          onClick={() => settlePaid(item.billing_id)}
+                          tone="success"
+                        >
+                          Confirm Paid ({item.currency} {Number(item.amount).toLocaleString()})
+                        </ActionButton>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Inline Mark Failed Form */}
                   {isFailing && (
-                    <div
-                      className="
-                        flex
-                        flex-col
-                        sm:flex-row
-                        sm:items-center
-                        gap-2
-                        mt-3
-                      "
-                    >
+                    <div className="mt-3 p-3 bg-surface-950/60 rounded-lg border border-error/30 space-y-3">
+                      <div className="text-xs font-medium text-error">
+                        Record Payment Failure
+                      </div>
                       <input
                         type="text"
                         value={failReason}
-                        onChange={(event) =>
-                          setFailReason(event.target.value)
-                        }
-                        placeholder={DEFAULT_FAIL_REASON}
-                        className="
-                          flex-1
-                          bg-surface-900
-                          border border-surface-600
-                          rounded-lg
-                          px-3 py-2
-                          text-sm
-                          text-surface-100
-                          placeholder:text-surface-500
-                        "
+                        onChange={(e) => setFailReason(e.target.value)}
+                        placeholder="Failure reason (e.g. EFT bounced / Insufficient funds)"
+                        className="w-full bg-surface-900 border border-surface-600 rounded-lg px-3 py-2 text-sm text-surface-100 placeholder:text-surface-500 focus:outline-none focus:border-error"
                       />
-
-                      <ActionButton
-                        busyKey={`fail-${item.billing_id}`}
-                        busy={busy}
-                        onClick={() => settleFailed(item.billing_id)}
-                        tone="danger"
-                      >
-                        Confirm failure
-                      </ActionButton>
+                      <div className="flex items-center gap-2 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setFailTarget(null)}
+                          className="px-3 py-1.5 rounded-lg text-xs text-surface-400 hover:text-surface-200"
+                        >
+                          Cancel
+                        </button>
+                        <ActionButton
+                          busyKey={`fail-${item.billing_id}`}
+                          busy={busy}
+                          onClick={() => settleFailed(item.billing_id)}
+                          tone="danger"
+                        >
+                          Confirm Failure
+                        </ActionButton>
+                      </div>
                     </div>
                   )}
                 </div>

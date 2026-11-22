@@ -106348,6 +106348,315 @@ class DatabaseService:
 
         return accounts.get(role)
 
+    def pos_get_sale_receipt_data(self, company_id: int, sale_id: int) -> dict | None:
+        schema = self.company_schema(company_id)
+        sale = self.fetch_one(f"""
+            SELECT s.*, c.customer_name, c.email AS customer_email, c.phone AS customer_phone
+            FROM {schema}.pos_sales s
+            LEFT JOIN {schema}.customers c ON c.id = s.customer_id
+            WHERE s.company_id = %s AND s.id = %s
+        """, (int(company_id), int(sale_id)))
+        if not sale:
+            return None
+        lines = self.fetch_all(f"""
+            SELECT sl.*, i.name AS item_name, i.description AS item_desc
+            FROM {schema}.pos_sale_lines sl
+            LEFT JOIN {schema}.inventory_items i ON i.id = sl.item_id
+            WHERE sl.company_id = %s AND sl.sale_id = %s
+            ORDER BY sl.id ASC
+        """, (int(company_id), int(sale_id))) or []
+        payments = self.fetch_all(f"""
+            SELECT * FROM {schema}.pos_payments
+            WHERE company_id = %s AND sale_id = %s
+            ORDER BY id ASC
+        """, (int(company_id), int(sale_id))) or []
+        sale["lines"] = lines
+        sale["payments"] = payments
+        return sale
+
+    # ==========================================
+    # INVOICE TEMPLATES ENGINE
+    # ==========================================
+    def ensure_invoice_templates_table(self, company_id: int):
+        schema = self.company_schema(company_id)
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {schema}.invoice_templates (
+                    id SERIAL PRIMARY KEY,
+                    company_id INT NOT NULL,
+                    template_name TEXT NOT NULL,
+                    layout_style TEXT NOT NULL DEFAULT 'modern',
+                    primary_color TEXT NOT NULL DEFAULT '#0F2A3D',
+                    accent_color TEXT NOT NULL DEFAULT '#0070F3',
+                    font_family TEXT NOT NULL DEFAULT 'Helvetica',
+                    logo_alignment TEXT NOT NULL DEFAULT 'left',
+                    show_logo BOOLEAN NOT NULL DEFAULT TRUE,
+                    show_tax_column BOOLEAN NOT NULL DEFAULT TRUE,
+                    show_discount_column BOOLEAN NOT NULL DEFAULT TRUE,
+                    show_item_code BOOLEAN NOT NULL DEFAULT FALSE,
+                    bank_name TEXT NULL,
+                    bank_account_name TEXT NULL,
+                    bank_account_number TEXT NULL,
+                    bank_branch_code TEXT NULL,
+                    bank_swift_bic TEXT NULL,
+                    payment_terms_note TEXT NULL,
+                    footer_note TEXT NULL,
+                    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+            """)
+
+    def list_invoice_templates(self, company_id: int) -> list[dict]:
+        self.ensure_invoice_templates_table(company_id)
+        schema = self.company_schema(company_id)
+        rows = self.fetch_all(f"""
+            SELECT * FROM {schema}.invoice_templates
+            WHERE company_id = %s
+            ORDER BY is_default DESC, id ASC
+        """, (int(company_id),)) or []
+        if not rows:
+            default_t = self.create_invoice_template(company_id, {
+                "template_name": "Standard Modern (Default)",
+                "layout_style": "modern",
+                "primary_color": "#0F2A3D",
+                "accent_color": "#0070F3",
+                "font_family": "Helvetica",
+                "logo_alignment": "left",
+                "show_logo": True,
+                "show_tax_column": True,
+                "show_discount_column": True,
+                "show_item_code": False,
+                "payment_terms_note": "Payment is due within 30 days of invoice date.",
+                "footer_note": "Thank you for your business!",
+                "is_default": True
+            })
+            if default_t:
+                rows = [default_t]
+        return rows
+
+    def get_invoice_template(self, company_id: int, template_id: int | None = None) -> dict | None:
+        self.ensure_invoice_templates_table(company_id)
+        schema = self.company_schema(company_id)
+        if template_id:
+            return self.fetch_one(f"""
+                SELECT * FROM {schema}.invoice_templates
+                WHERE company_id = %s AND id = %s
+            """, (int(company_id), int(template_id)))
+        row = self.fetch_one(f"""
+            SELECT * FROM {schema}.invoice_templates
+            WHERE company_id = %s AND is_default = TRUE
+            LIMIT 1
+        """, (int(company_id),))
+        if not row:
+            templates = self.list_invoice_templates(company_id)
+            return templates[0] if templates else None
+        return row
+
+    def create_invoice_template(self, company_id: int, data: dict) -> dict:
+        self.ensure_invoice_templates_table(company_id)
+        schema = self.company_schema(company_id)
+        is_default = bool(data.get("is_default", False))
+        if is_default:
+            with self._conn_cursor() as (conn, cur):
+                cur.execute(f"UPDATE {schema}.invoice_templates SET is_default = FALSE WHERE company_id = %s", (int(company_id),))
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.invoice_templates (
+                company_id, template_name, layout_style, primary_color, accent_color,
+                font_family, logo_alignment, show_logo, show_tax_column, show_discount_column,
+                show_item_code, bank_name, bank_account_name, bank_account_number,
+                bank_branch_code, bank_swift_bic, payment_terms_note, footer_note, is_default
+            ) VALUES (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s, %s, %s
+            ) RETURNING *;
+        """, (
+            int(company_id),
+            data.get("template_name") or "Custom Template",
+            data.get("layout_style") or "modern",
+            data.get("primary_color") or "#0F2A3D",
+            data.get("accent_color") or "#0070F3",
+            data.get("font_family") or "Helvetica",
+            data.get("logo_alignment") or "left",
+            bool(data.get("show_logo", True)),
+            bool(data.get("show_tax_column", True)),
+            bool(data.get("show_discount_column", True)),
+            bool(data.get("show_item_code", False)),
+            data.get("bank_name"),
+            data.get("bank_account_name"),
+            data.get("bank_account_number"),
+            data.get("bank_branch_code"),
+            data.get("bank_swift_bic"),
+            data.get("payment_terms_note"),
+            data.get("footer_note"),
+            is_default,
+        ))
+        return row or {}
+
+    def update_invoice_template(self, company_id: int, template_id: int, data: dict) -> dict | None:
+        self.ensure_invoice_templates_table(company_id)
+        schema = self.company_schema(company_id)
+        is_default = data.get("is_default")
+        if is_default:
+            with self._conn_cursor() as (conn, cur):
+                cur.execute(f"UPDATE {schema}.invoice_templates SET is_default = FALSE WHERE company_id = %s", (int(company_id),))
+        row = self.fetch_one(f"""
+            UPDATE {schema}.invoice_templates
+            SET
+                template_name = COALESCE(%s, template_name),
+                layout_style = COALESCE(%s, layout_style),
+                primary_color = COALESCE(%s, primary_color),
+                accent_color = COALESCE(%s, accent_color),
+                font_family = COALESCE(%s, font_family),
+                logo_alignment = COALESCE(%s, logo_alignment),
+                show_logo = COALESCE(%s, show_logo),
+                show_tax_column = COALESCE(%s, show_tax_column),
+                show_discount_column = COALESCE(%s, show_discount_column),
+                show_item_code = COALESCE(%s, show_item_code),
+                bank_name = COALESCE(%s, bank_name),
+                bank_account_name = COALESCE(%s, bank_account_name),
+                bank_account_number = COALESCE(%s, bank_account_number),
+                bank_branch_code = COALESCE(%s, bank_branch_code),
+                bank_swift_bic = COALESCE(%s, bank_swift_bic),
+                payment_terms_note = COALESCE(%s, payment_terms_note),
+                footer_note = COALESCE(%s, footer_note),
+                is_default = COALESCE(%s, is_default),
+                updated_at = NOW()
+            WHERE company_id = %s AND id = %s
+            RETURNING *;
+        """, (
+            data.get("template_name"),
+            data.get("layout_style"),
+            data.get("primary_color"),
+            data.get("accent_color"),
+            data.get("font_family"),
+            data.get("logo_alignment"),
+            data.get("show_logo"),
+            data.get("show_tax_column"),
+            data.get("show_discount_column"),
+            data.get("show_item_code"),
+            data.get("bank_name"),
+            data.get("bank_account_name"),
+            data.get("bank_account_number"),
+            data.get("bank_branch_code"),
+            data.get("bank_swift_bic"),
+            data.get("payment_terms_note"),
+            data.get("footer_note"),
+            is_default,
+            int(company_id),
+            int(template_id),
+        ))
+        return row
+
+    def delete_invoice_template(self, company_id: int, template_id: int) -> bool:
+        self.ensure_invoice_templates_table(company_id)
+        schema = self.company_schema(company_id)
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"DELETE FROM {schema}.invoice_templates WHERE company_id = %s AND id = %s", (int(company_id), int(template_id)))
+            return cur.rowcount > 0
+
+    def set_default_invoice_template(self, company_id: int, template_id: int) -> dict | None:
+        self.ensure_invoice_templates_table(company_id)
+        schema = self.company_schema(company_id)
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"UPDATE {schema}.invoice_templates SET is_default = FALSE WHERE company_id = %s", (int(company_id),))
+            cur.execute(f"UPDATE {schema}.invoice_templates SET is_default = TRUE, updated_at = NOW() WHERE company_id = %s AND id = %s RETURNING *", (int(company_id), int(template_id)))
+            return cur.fetchone()
+
+    # ==========================================
+    # LIVE BANK FEEDS & CUSTOMER BANKING
+    # ==========================================
+    def ensure_bank_feeds_table(self, company_id: int):
+        schema = self.company_schema(company_id)
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {schema}.company_bank_feeds (
+                    id SERIAL PRIMARY KEY,
+                    company_id INT NOT NULL,
+                    bank_name TEXT NOT NULL,
+                    account_name TEXT NOT NULL,
+                    account_number_masked TEXT NOT NULL,
+                    account_type TEXT DEFAULT 'checking',
+                    currency TEXT DEFAULT 'USD',
+                    balance NUMERIC(18,2) DEFAULT 0.00,
+                    provider TEXT NOT NULL DEFAULT 'sandbox',
+                    connection_id TEXT NULL,
+                    status TEXT NOT NULL DEFAULT 'connected',
+                    last_synced_at TIMESTAMPTZ NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS {schema}.bank_feed_sync_logs (
+                    id SERIAL PRIMARY KEY,
+                    company_id INT NOT NULL,
+                    feed_id INT NOT NULL REFERENCES {schema}.company_bank_feeds(id) ON DELETE CASCADE,
+                    sync_type TEXT DEFAULT 'manual',
+                    transactions_fetched INT DEFAULT 0,
+                    transactions_imported INT DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'success',
+                    error_message TEXT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+            """)
+
+    def list_bank_feeds(self, company_id: int) -> list[dict]:
+        self.ensure_bank_feeds_table(company_id)
+        schema = self.company_schema(company_id)
+        return self.fetch_all(f"""
+            SELECT * FROM {schema}.company_bank_feeds
+            WHERE company_id = %s
+            ORDER BY id ASC
+        """, (int(company_id),)) or []
+
+    def get_bank_feed(self, company_id: int, feed_id: int) -> dict | None:
+        self.ensure_bank_feeds_table(company_id)
+        schema = self.company_schema(company_id)
+        return self.fetch_one(f"""
+            SELECT * FROM {schema}.company_bank_feeds
+            WHERE company_id = %s AND id = %s
+        """, (int(company_id), int(feed_id)))
+
+    def create_bank_feed(self, company_id: int, data: dict) -> dict:
+        self.ensure_bank_feeds_table(company_id)
+        schema = self.company_schema(company_id)
+        acc_no = str(data.get("account_number") or data.get("account_number_masked") or "8821")
+        masked = acc_no if "****" in acc_no else ("****" + acc_no[-4:])
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.company_bank_feeds (
+                company_id, bank_name, account_name, account_number_masked,
+                account_type, currency, balance, provider, connection_id, status, last_synced_at
+            ) VALUES (
+                %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, NOW()
+            ) RETURNING *;
+        """, (
+            int(company_id),
+            data.get("bank_name") or "Standard Live Bank",
+            data.get("account_name") or "Main Business Operating Account",
+            masked,
+            data.get("account_type") or "checking",
+            data.get("currency") or "USD",
+            float(data.get("balance") or 0.00),
+            data.get("provider") or "sandbox",
+            data.get("connection_id") or ("conn_" + str(int(time.time()))),
+            "connected",
+        ))
+        return row or {}
+
+    def disconnect_bank_feed(self, company_id: int, feed_id: int) -> bool:
+        self.ensure_bank_feeds_table(company_id)
+        schema = self.company_schema(company_id)
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"""
+                UPDATE {schema}.company_bank_feeds
+                SET status = 'disconnected', updated_at = NOW()
+                WHERE company_id = %s AND id = %s
+            """, (int(company_id), int(feed_id)))
+            return cur.rowcount > 0
+
     def pos_complete_sale(self, company_id: int, sale_id: int, *, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
 
@@ -112026,19 +112335,21 @@ class DatabaseService:
             "status": "posted",
         }
 
+
     def _calc_manual_payment_breakdown(self, payment_row: dict) -> dict:
-        principal = _money(payment_row.get("principal_amount"))
-        interest = _money(payment_row.get("interest_amount"))
-        accrued_interest = _money(payment_row.get("accrued_interest_amount"))
-        fees = _money(payment_row.get("fees_amount"))
-        penalties = _money(payment_row.get("penalties_amount"))
+        principal = _money(payment_row.get("principal_amount") or 0)
+        interest = _money(payment_row.get("interest_amount") or 0)
+        accrued_interest = _money(payment_row.get("accrued_interest_amount") or 0)
+        fees = _money(payment_row.get("fees_amount") or 0)
+        penalties = _money(payment_row.get("penalties_amount") or 0)
         capitalised_borrowing_costs = _money(
             payment_row.get("capitalised_borrowing_costs_amount")
             or payment_row.get("capitalised_interest_amount")
             or payment_row.get("borrowing_costs_amount")
+            or 0
         )
 
-        amount_paid = _money(payment_row.get("amount_paid"))
+        amount_paid = _money(payment_row.get("amount_paid") or 0)
 
         split_total = (
             principal
@@ -112874,6 +113185,97 @@ class DatabaseService:
             (cid,)
         )
         return True
+
+    def sync_customers_from_public_companies(self, company_id: int) -> Dict[str, Any]:
+        """
+        Synchronizes all active companies from public.companies into this company's
+        customers table (company_{company_id}.customers).
+
+        Enables the accounting invoicing flow to bill platform client companies
+        without violating foreign keys or breaking the standard customer workflow.
+        """
+        schema = f"company_{int(company_id)}"
+
+        companies = self.fetch_all(
+            """
+            SELECT id, name, company_email, company_phone, physical_address,
+                   postal_address, country, currency, vat, tin, company_reg_no
+            FROM public.companies
+            WHERE is_active = TRUE AND id != %s
+            ORDER BY id ASC
+            """,
+            (int(company_id),)
+        ) or []
+
+        created = 0
+        updated = 0
+
+        for cmp in companies:
+            cmp_id = cmp["id"]
+            name = (cmp.get("name") or "").strip()
+            if not name:
+                continue
+
+            email = (cmp.get("company_email") or "").strip() or None
+            phone = (cmp.get("company_phone") or "").strip() or None
+            address = (cmp.get("physical_address") or cmp.get("postal_address") or "").strip() or None
+            country = (cmp.get("country") or "").strip() or None
+            currency = (cmp.get("currency") or "").strip() or None
+            vat = (cmp.get("vat") or "").strip() or None
+            tin = (cmp.get("tin") or "").strip() or None
+            reg_no = (cmp.get("company_reg_no") or "").strip() or None
+            ext_code = f"COMP-{cmp_id}"
+
+            existing = self.fetch_one(
+                f"""
+                SELECT id FROM {schema}.customers
+                WHERE company_master_id = %s OR external_code = %s
+                LIMIT 1
+                """,
+                (cmp_id, ext_code)
+            )
+
+            if existing:
+                self.execute_sql(
+                    f"""
+                    UPDATE {schema}.customers
+                    SET name = %s,
+                        email = COALESCE(%s, email),
+                        phone = COALESCE(%s, phone),
+                        billing_address = COALESCE(%s, billing_address),
+                        country = COALESCE(%s, country),
+                        vat_number = COALESCE(%s, vat_number),
+                        tax_number = COALESCE(%s, tax_number),
+                        registration_no = COALESCE(%s, registration_no),
+                        company_master_id = %s,
+                        is_active = TRUE,
+                        credit_status = 'approved',
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (name, email, phone, address, country, vat, tin, reg_no, cmp_id, existing["id"])
+                )
+                updated += 1
+            else:
+                self.execute_sql(
+                    f"""
+                    INSERT INTO {schema}.customers (
+                        company_id, company_master_id, external_code, name, email, phone,
+                        billing_address, country, vat_number, tax_number, registration_no,
+                        credit_status, is_active, customer_type, created_at, updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'approved', TRUE, 'company', NOW(), NOW())
+                    """,
+                    (int(company_id), cmp_id, ext_code, name, email, phone, address, country, vat, tin, reg_no)
+                )
+                created += 1
+
+        return {
+            "ok": True,
+            "total_companies": len(companies),
+            "created": created,
+            "updated": updated,
+        }
 
     # ---------------------------
     # VENDORS (per-company)
