@@ -1,4 +1,4 @@
-print("[BOOT] api_server.py import started")
+﻿print("[BOOT] api_server.py import started")
 
 # ────────────────────────────────────────────────────────────────
 # Load environment FIRST (before ANY BackEnd.Services imports)
@@ -767,7 +767,7 @@ app.register_blueprint(receipt_scan_bp)
 app.register_blueprint(entitlements_bp)
 app.register_blueprint(practice_bp)
 app.register_blueprint(subscriptions_bp)
-
+app.register_blueprint(subscription_jobs_bp)
 # ═══ REMITTANCE IMPORT EXTENSION ═══
 app.register_blueprint(makro_bp)
 app.register_blueprint(marketplace_bp)
