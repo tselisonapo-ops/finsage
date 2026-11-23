@@ -267,7 +267,7 @@ from BackEnd.Services.control.control_automation import control_automation_bp
 from BackEnd.Services.receipt_scan_routes import receipt_scan_bp
 from BackEnd.Services.entitlements_endpoint import entitlements_bp
 from BackEnd.Services.practice_endpoint import practice_bp
-from BackEnd.Services.subscription_jobs import subscription_jobs_bp, register_subscription_jobs
+from BackEnd.Services.subscription_jobs import register_subscription_jobs
 from BackEnd.Services.entitlement_gate import register_entitlement_gate
 from BackEnd.Services.audit_ridealong import register_audit_ridealong
 from BackEnd.Services.subscription.practice_service import register_practice
@@ -767,7 +767,7 @@ app.register_blueprint(receipt_scan_bp)
 app.register_blueprint(entitlements_bp)
 app.register_blueprint(practice_bp)
 app.register_blueprint(subscriptions_bp)
-app.register_blueprint(subscription_jobs_bp)
+#app.register_blueprint(subscription_jobs_bp)
 # ═══ REMITTANCE IMPORT EXTENSION ═══
 app.register_blueprint(makro_bp)
 app.register_blueprint(marketplace_bp)
