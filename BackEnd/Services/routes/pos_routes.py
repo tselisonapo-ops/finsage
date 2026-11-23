@@ -500,6 +500,388 @@ def api_pos_email_receipt(cid: int, sale_id: int):
     except Exception as ex:
         current_app.logger.exception(f"Failed to email POS receipt for sale {sale_id}")
         return _err(f"Failed to send email: {str(ex)}", 500, ex)
+
+
+# ----------------------------------------------------------------------
+# BUSINESS WHATSAPP INTEGRATION & POS SALES INVOICE SHARING
+# ----------------------------------------------------------------------
+
+@pos_bp.route("/api/companies/<int:cid>/integrations/whatsapp", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_company_whatsapp_settings(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            settings = db_service.get_whatsapp_settings(cid, include_secrets=False)
+            return jsonify({"ok": True, "settings": settings}), 200
+
+        body = request.get_json(silent=True) or {}
+        updated = db_service.save_whatsapp_settings(cid, body)
+        return jsonify({"ok": True, "settings": updated}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_company_whatsapp_settings failed")
+        return _err("Server error managing WhatsApp settings", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/integrations/whatsapp/test", methods=["POST", "OPTIONS"])
+@require_auth
+def api_test_whatsapp_connection(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        import requests
+        settings = db_service.get_whatsapp_settings(cid, include_secrets=True)
+        method = settings.get("integration_method") or "web_desktop"
+
+        if method == "web_desktop":
+            phone = settings.get("business_number") or ""
+            return jsonify({
+                "ok": True,
+                "mode": "web_desktop",
+                "message": f"Web/Desktop mode active with business number: {phone or 'Not configured'}. Ready for customer wa.me dispatches.",
+            }), 200
+
+        # Cloud API mode verification
+        phone_id = (settings.get("phone_number_id") or "").strip()
+        token = (settings.get("access_token") or "").strip()
+        if not phone_id or not token:
+            return _err("Phone Number ID and Access Token are required to test Cloud API connection.", 400)
+
+        # Call Meta Graph API to verify phone number registration status
+        meta_url = f"https://graph.facebook.com/v21.0/{phone_id}"
+        resp = requests.get(meta_url, headers={"Authorization": f"Bearer {token}"}, timeout=10)
+        data = resp.json()
+
+        if resp.status_code >= 400:
+            error_msg = data.get("error", {}).get("message", "Meta API returned error")
+            return jsonify({"ok": False, "mode": "cloud_api", "error": error_msg, "meta_response": data}), 400
+
+        return jsonify({
+            "ok": True,
+            "mode": "cloud_api",
+            "message": "Successfully connected to Meta WhatsApp Cloud API!",
+            "details": {
+                "display_phone_number": data.get("display_phone_number"),
+                "verified_name": data.get("verified_name"),
+                "quality_rating": data.get("quality_rating"),
+                "status": data.get("code_verification_status"),
+            }
+        }), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_test_whatsapp_connection failed")
+        return _err(f"Test connection failed: {str(ex)}", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/sales/<int:sale_id>/invoice-pdf", methods=["GET", "OPTIONS"])
+@require_auth
+def api_pos_sale_invoice_pdf(cid: int, sale_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        from BackEnd.Services.invoice_pdf_service import generate_receipt_pdf
+        sale_data = db_service.pos_get_sale_receipt_data(cid, sale_id)
+        if not sale_data:
+            return _err("Sale not found", 404)
+
+        company = db_service.get_company(cid) or {}
+        branding = db_service.get_company_branding(cid) or {}
+        company["branding"] = branding
+
+        pdf_bytes = generate_receipt_pdf(sale_data, company=company)
+        sale_no = sale_data.get("sale_no") or f"INV-{sale_id:06d}"
+        filename = f"{sale_no}.pdf"
+
+        as_download = request.args.get("download", "").lower() in ("1", "true", "yes")
+        disposition = "attachment" if as_download else "inline"
+
+        response = make_response(pdf_bytes)
+        response.headers["Content-Type"] = "application/pdf"
+        response.headers["Content-Disposition"] = f'{disposition}; filename="{filename}"'
+        return _corsify(response)
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_sale_invoice_pdf failed")
+        return _err("Failed to generate sales invoice PDF", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/sales/<int:sale_id>/send-whatsapp", methods=["POST", "OPTIONS"])
+@require_auth
+def api_pos_send_whatsapp_invoice(cid: int, sale_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        from urllib.parse import quote
+        import requests
+        from BackEnd.Services.invoice_pdf_service import generate_receipt_pdf
+
+        body = request.get_json(silent=True) or {}
+        custom_phone = (body.get("recipient_phone") or body.get("phone") or "").strip()
+
+        sale_data = db_service.pos_get_sale_receipt_data(cid, sale_id)
+        if not sale_data:
+            return _err("Sale record not found.", 404)
+
+        company = db_service.get_company(cid) or {}
+        branding = db_service.get_company_branding(cid) or {}
+        company["branding"] = branding
+
+        settings = db_service.get_whatsapp_settings(cid, include_secrets=True)
+        method = (body.get("delivery_method") or settings.get("integration_method") or "web_desktop").strip().lower()
+
+        # Target recipient phone number
+        raw_phone = custom_phone or sale_data.get("customer_phone") or ""
+        clean_phone = "".join(ch for ch in str(raw_phone) if ch.isdigit())
+        if clean_phone.startswith("0") and len(clean_phone) == 10:
+            clean_phone = "27" + clean_phone[1:] # standard Southern Africa format
+
+        if not clean_phone:
+            return _err("Recipient WhatsApp phone number is required.", 400)
+
+        sale_no = sale_data.get("sale_no") or f"INV-{sale_id:06d}"
+        currency = company.get("currency") or "LSL"
+        gross_val = float(sale_data.get("gross_amount") or 0.0)
+        formatted_amount = f"{currency} {gross_val:,.2f}"
+        customer_name = sale_data.get("customer_name") or "Valued Customer"
+        company_name = company.get("name") or "FinSage Store"
+
+        # Dynamically populate template
+        template = settings.get("default_message") or (
+            "Hello,\nThank you for shopping with us!\n"
+            "Please find your sales invoice attached.\n"
+            "Invoice: {invoice_number}\nAmount: {amount}\nWe appreciate your business."
+        )
+        msg_text = (
+            template
+            .replace("{invoice_number}", sale_no)
+            .replace("{amount}", formatted_amount)
+            .replace("{customer_name}", customer_name)
+            .replace("{company_name}", company_name)
+        )
+
+        pdf_filename = f"{sale_no}.pdf"
+
+        # MODE A: Web / Desktop Manual Fallback
+        if method == "web_desktop":
+            wa_url = f"https://wa.me/{clean_phone}?text={quote(msg_text)}"
+            
+            # Log attempt as prepared (not marked delivered merely because window opened)
+            db_service.log_whatsapp_delivery(cid, {
+                "sale_id": sale_id,
+                "invoice_number": sale_no,
+                "customer_number": clean_phone,
+                "sender_number": settings.get("business_number"),
+                "delivery_method": "web_desktop",
+                "status": "prepared",
+                "message_id": None,
+                "metadata": {
+                    "wa_url": wa_url,
+                    "customer_name": customer_name,
+                    "amount": formatted_amount,
+                }
+            })
+
+            return jsonify({
+                "ok": True,
+                "method": "web_desktop",
+                "status": "prepared",
+                "wa_url": wa_url,
+                "clean_phone": clean_phone,
+                "message_text": msg_text,
+                "pdf_filename": pdf_filename,
+                "download_url": f"/api/companies/{cid}/pos/sales/{sale_id}/invoice-pdf?download=1",
+                "instructions": "WhatsApp message prepared. Invoice PDF will download for attachment.",
+            }), 200
+
+        # MODE B: WhatsApp Cloud API Automated Direct Delivery
+        phone_id = settings.get("phone_number_id")
+        token = settings.get("access_token")
+
+        if not phone_id or not token:
+            # Fall back to web_desktop with note if Cloud API credentials missing
+            wa_url = f"https://wa.me/{clean_phone}?text={quote(msg_text)}"
+            return jsonify({
+                "ok": True,
+                "method": "web_desktop",
+                "status": "prepared",
+                "fallback_reason": "Cloud API credentials not fully configured; fell back to Web/Desktop mode.",
+                "wa_url": wa_url,
+                "clean_phone": clean_phone,
+                "message_text": msg_text,
+                "pdf_filename": pdf_filename,
+                "download_url": f"/api/companies/{cid}/pos/sales/{sale_id}/invoice-pdf?download=1",
+            }), 200
+
+        # 1. Generate PDF
+        pdf_bytes = generate_receipt_pdf(sale_data, company=company)
+
+        # 2. Upload document to Meta Cloud API media endpoint
+        media_upload_url = f"https://graph.facebook.com/v21.0/{phone_id}/media"
+        files = {
+            "file": (pdf_filename, pdf_bytes, "application/pdf"),
+            "messaging_product": (None, "whatsapp"),
+            "type": (None, "application/pdf"),
+        }
+        upload_resp = requests.post(media_upload_url, headers={"Authorization": f"Bearer {token}"}, files=files, timeout=20)
+        upload_data = upload_resp.json()
+
+        if upload_resp.status_code >= 400 or not upload_data.get("id"):
+            err_msg = upload_data.get("error", {}).get("message", "Failed to upload invoice PDF to Meta")
+            db_service.log_whatsapp_delivery(cid, {
+                "sale_id": sale_id,
+                "invoice_number": sale_no,
+                "customer_number": clean_phone,
+                "sender_number": settings.get("business_number"),
+                "delivery_method": "cloud_api",
+                "status": "failed",
+                "error_message": err_msg,
+                "metadata": {"upload_response": upload_data},
+            })
+            return jsonify({"ok": False, "method": "cloud_api", "status": "failed", "error": err_msg}), 400
+
+        media_id = upload_data["id"]
+
+        # 3. Send WhatsApp document message with media ID
+        send_url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+        send_payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": clean_phone,
+            "type": "document",
+            "document": {
+                "id": media_id,
+                "caption": msg_text,
+                "filename": pdf_filename,
+            }
+        }
+        send_resp = requests.post(send_url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=send_payload, timeout=20)
+        send_data = send_resp.json()
+
+        if send_resp.status_code >= 400:
+            err_msg = send_data.get("error", {}).get("message", "Meta message delivery failed")
+            db_service.log_whatsapp_delivery(cid, {
+                "sale_id": sale_id,
+                "invoice_number": sale_no,
+                "customer_number": clean_phone,
+                "sender_number": settings.get("business_number"),
+                "delivery_method": "cloud_api",
+                "status": "failed",
+                "error_message": err_msg,
+                "metadata": {"send_response": send_data},
+            })
+            return jsonify({"ok": False, "method": "cloud_api", "status": "failed", "error": err_msg}), 400
+
+        msg_id = (send_data.get("messages") or [{}])[0].get("id")
+
+        db_service.log_whatsapp_delivery(cid, {
+            "sale_id": sale_id,
+            "invoice_number": sale_no,
+            "customer_number": clean_phone,
+            "sender_number": settings.get("business_number"),
+            "delivery_method": "cloud_api",
+            "status": "sent",
+            "message_id": msg_id,
+            "metadata": {"send_response": send_data},
+        })
+
+        return jsonify({
+            "ok": True,
+            "method": "cloud_api",
+            "status": "sent",
+            "message_id": msg_id,
+            "message": f"Sales invoice PDF sent directly to customer WhatsApp ({clean_phone}) via Cloud API!",
+        }), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_send_whatsapp_invoice failed")
+        return _err(f"Failed to send WhatsApp invoice: {str(ex)}", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/sales/<int:sale_id>/whatsapp-logs", methods=["GET", "OPTIONS"])
+@require_auth
+def api_pos_whatsapp_logs(cid: int, sale_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        logs = db_service.list_whatsapp_delivery_logs(cid, sale_id=sale_id, limit=20)
+        return jsonify({"ok": True, "logs": logs}), 200
+    except Exception as ex:
+        current_app.logger.exception("api_pos_whatsapp_logs failed")
+        return _err("Server error", 500, ex)
+
+
+# ----------------------------------------------------------------------
+# CONSOLIDATED CASH-UP SALES INVOICE REPORTING
+# ----------------------------------------------------------------------
+
+@pos_bp.route("/api/companies/<int:cid>/pos/shifts/<int:shift_id>/invoice-report", methods=["GET", "OPTIONS"])
+@require_auth
+def api_pos_cashup_invoice_report(cid: int, shift_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        report = db_service.get_cashup_session_invoices(cid, shift_id)
+        return jsonify({"ok": True, "report": report}), 200
+
+    except ValueError as ve:
+        return _err(str(ve), 404)
+    except Exception as ex:
+        current_app.logger.exception("api_pos_cashup_invoice_report failed")
+        return _err("Failed to compile consolidated cash-up invoice report", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/shifts/<int:shift_id>/invoice-report/save", methods=["POST", "OPTIONS"])
+@require_auth
+def api_pos_save_cashup_invoice_report(cid: int, shift_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        report = db_service.save_cashup_invoice_report(cid, shift_id, user_id=_user_id())
+        return jsonify({"ok": True, "report": report}), 200
+
+    except ValueError as ve:
+        return _err(str(ve), 404)
+    except Exception as ex:
+        current_app.logger.exception("api_pos_save_cashup_invoice_report failed")
+        return _err("Failed to save and audit consolidated cash-up invoice report", 500, ex)
+
     
 @pos_bp.route("/api/companies/<int:cid>/pos/reports/<path:report_key>", methods=["GET", "OPTIONS"])
 @require_auth

@@ -46,7 +46,7 @@ receipt_scan_bp = Blueprint("receipt_scan", __name__)
 ALLOWED_SCAN_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".pdf"}
 MAX_SCAN_BYTES = 15 * 1024 * 1024  # 15 MB
 
-DOC_STATUSES = ("uploaded", "draft_ready", "posted", "discarded")
+DOC_STATUSES = ("uploaded", "draft_ready", "posted", "applied", "discarded")
 
 
 # ────────────────────────────────────────────────────────────────
@@ -71,6 +71,7 @@ def _ensure_table(company_id: int) -> None:
             extracted      JSONB DEFAULT '{{}}'::jsonb,
             draft_journal  JSONB DEFAULT '{{}}'::jsonb,
             journal_id     INTEGER,
+            bill_id        INTEGER,
             duplicate_of   INTEGER,
             uploaded_by    INTEGER,
             extracted_at   TIMESTAMPTZ,
@@ -78,6 +79,8 @@ def _ensure_table(company_id: int) -> None:
             created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        ALTER TABLE {schema}.receipt_scan_documents
+            ADD COLUMN IF NOT EXISTS bill_id INTEGER;
         """
     )
 
@@ -127,6 +130,7 @@ def _doc_summary(row: dict) -> dict:
         "engine": ex.get("engine"),
         "duplicate_of": row.get("duplicate_of"),
         "journal_id": row.get("journal_id"),
+        "bill_id": row.get("bill_id"),
         "ref": dj.get("ref") or "",
         "created_at": str(row.get("created_at") or ""),
         "posted_at": str(row.get("posted_at") or ""),
@@ -316,10 +320,57 @@ def upload_receipt_document(company_id: int):
         entity_ref=original,
     )
 
+    # ── Auto-extract on upload so draft is immediately ready ──
+    raw_hint = str(request.form.get("credit_hint") or "bank").lower().strip()
+    if raw_hint in ("petty_cash", "petty"):
+        credit_hint = "petty_cash"
+    elif raw_hint in ("ap", "accounts_payable"):
+        credit_hint = "ap"
+    else:
+        credit_hint = "bank"
+
+    status = "uploaded"
+    extracted_payload = {}
+    draft = {}
+    try:
+        extract_res = receipt_scan_ai.extract_document(path, mime)
+        facts = extract_res.get("facts") or {}
+        facts["_engine"] = extract_res.get("engine")
+        facts["_confidence"] = extract_res.get("confidence")
+        draft = receipt_scan_ai.build_draft_journal(
+            db_service, int(company_id), facts, int(doc_id),
+            credit_hint=credit_hint,
+            field_confidence=extract_res.get("field_confidence") or {},
+        )
+        extracted_payload = {
+            "facts": facts,
+            "confidence": extract_res.get("confidence"),
+            "field_confidence": extract_res.get("field_confidence") or {},
+            "engine": extract_res.get("engine"),
+            "needs_review": extract_res.get("needs_review"),
+        }
+        status = "draft_ready"
+        db_service.execute_sql(
+            f"""
+            UPDATE company_{int(company_id)}.receipt_scan_documents
+            SET status = 'draft_ready',
+                extracted = %s,
+                draft_journal = %s,
+                extracted_at = NOW(),
+                updated_at = NOW()
+            WHERE id = %s AND company_id = %s;
+            """,
+            (Json(extracted_payload), Json(draft), int(doc_id), int(company_id)),
+        )
+    except Exception:
+        current_app.logger.exception("Auto-extract on upload failed non-fatally")
+
     return jsonify({
         "ok": True,
         "doc_id": int(doc_id),
-        "status": "uploaded",
+        "status": status,
+        "extracted": extracted_payload,
+        "draft_journal": draft,
         "file_url": f"/api/companies/{company_id}/receipt-scan/documents/{doc_id}/file",
         "duplicate_of": int(dup["id"]) if dup else None,
         "is_duplicate": bool(dup),
@@ -444,7 +495,13 @@ def extract_receipt_document(company_id: int, doc_id: int):
         return jsonify({"error": "Document already posted"}), 409
 
     payload = request.get_json(silent=True) or {}
-    credit_hint = "bank" if str(payload.get("credit_hint") or "").lower() == "bank" else "ap"
+    raw_hint = str(payload.get("credit_hint") or "bank").lower().strip()
+    if raw_hint in ("petty_cash", "petty"):
+        credit_hint = "petty_cash"
+    elif raw_hint in ("ap", "accounts_payable"):
+        credit_hint = "ap"
+    else:
+        credit_hint = "bank"
 
     path = str(row.get("file_path") or "")
     if not path or not os.path.isfile(path):
@@ -833,3 +890,36 @@ def discard_receipt_document(company_id: int, doc_id: int):
            entity_ref=str(row.get("original_name") or "")[:60])
 
     return jsonify({"ok": True, "doc_id": int(doc_id), "status": "discarded"}), 200
+
+
+@receipt_scan_bp.route("/api/companies/<int:company_id>/receipt-scan/documents/<int:doc_id>/apply-bill",
+                       methods=["POST", "OPTIONS"])
+@cross_origin()
+@require_auth
+def mark_document_applied_bill(company_id: int, doc_id: int):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    user = getattr(g, "current_user", None) or {}
+    if user.get("company_id") not in (None, company_id):
+        return jsonify({"error": "Not authorised for this company"}), 403
+
+    payload = request.get_json(silent=True) or {}
+    bill_id = payload.get("bill_id")
+    schema = f"company_{int(company_id)}"
+
+    db_service.execute_sql(
+        f"""
+        UPDATE {schema}.receipt_scan_documents
+        SET status = 'applied',
+            bill_id = %s,
+            updated_at = NOW()
+        WHERE id = %s AND company_id = %s;
+        """,
+        (int(bill_id) if bill_id else None, int(doc_id), int(company_id)),
+    )
+
+    _audit(company_id, "apply_receipt_scan_bill", str(doc_id), "Receipt applied to supplier bill",
+           after={"status": "applied", "bill_id": bill_id})
+
+    return jsonify({"ok": True, "doc_id": int(doc_id), "status": "applied", "bill_id": bill_id}), 200

@@ -1822,6 +1822,12 @@ class ControlService(SubscriptionControlMixin):   # was: class ControlService:
                 ON s.id = t.sla_id
         """)
 
+        sub_overview = {}
+        try:
+            sub_overview = self.get_subscriptions_overview() or {}
+        except Exception:
+            pass
+
         return {
             "open_tickets": stats["open_tickets"] or 0,
             "critical_tickets": stats["critical_tickets"] or 0,
@@ -1841,6 +1847,7 @@ class ControlService(SubscriptionControlMixin):   # was: class ControlService:
             "ticket_types": types,
             "recent_tickets": recent,
             "agent_workload": agents,
+            "subscriptions": sub_overview,
         }
 
     # ────────────────────────────────────────
@@ -2493,6 +2500,8 @@ class ControlService(SubscriptionControlMixin):   # was: class ControlService:
             SELECT
                 id AS company_id,
                 name AS company_name,
+                industry,
+                sub_industry,
                 currency,
                 is_active
             FROM public.companies

@@ -492,7 +492,7 @@ def build_draft_journal(
     company_id: int,
     facts: Dict[str, Any],
     doc_id: int,
-    credit_hint: str = "ap",           # "ap" | "bank"
+    credit_hint: str = "bank",           # "bank" (default, Cash & Bank / BS_CA_1000) | "petty_cash" | "ap"
     field_confidence: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Any]:
     """
@@ -545,15 +545,41 @@ def build_draft_journal(
     if not vat_row and "BS_CA_1410" in accounts["by_code"]:
         vat_row = accounts["by_code"]["BS_CA_1410"]
 
-    # ── credit side: AP (default) or bank ─────────────────────
-    if credit_hint == "bank":
-        credit_row = _find_account(rows, [r"^bank\b", r"bank account", r"current account", r"cheque"])
+    # ── credit side: Cash & Bank (default), Petty Cash, or AP ──
+    credit_row = None
+    hint_low = str(credit_hint or "bank").lower().strip()
+
+    if hint_low in ("bank", "cash", "cash_and_bank"):
+        # Default for General Journal: Cash & Bank / BS_CA_1000
+        if "BS_CA_1000" in accounts["by_code"]:
+            credit_row = accounts["by_code"]["BS_CA_1000"]
+        if not credit_row:
+            credit_row = _find_account(rows, [r"cash\s*(&|and)\s*bank", r"^cash\s*and\s*cash", r"^bank\b", r"bank account", r"current account", r"cheque", r"^cash\b"])
+        if not credit_row and "BS_CA_1010" in accounts["by_code"]:
+            credit_row = accounts["by_code"]["BS_CA_1010"]
+
+    elif hint_low in ("petty_cash", "petty"):
+        credit_row = _find_account(rows, [r"petty\s*cash", r"^petty", r"cash\s*float"])
+        if not credit_row:
+            for code in ("BS_CA_1020", "BS_CA_1015", "BS_CA_1010", "1020", "1015"):
+                if code in accounts["by_code"]:
+                    credit_row = accounts["by_code"][code]
+                    break
         if not credit_row and "BS_CA_1000" in accounts["by_code"]:
             credit_row = accounts["by_code"]["BS_CA_1000"]
-    else:
-        credit_row = _find_account(rows, [r"accounts?\s+payable", r"trade\s+payable", r"creditors?\b"])
+
+    elif hint_low in ("ap", "accounts_payable"):
+        credit_row = _find_account(rows, [r"accounts?\s+payable", r"trade\s+payable", r"creditors?\b", r"trade\s+creditors"])
+        if not credit_row and "BS_CL_2000" in accounts["by_code"]:
+            credit_row = accounts["by_code"]["BS_CL_2000"]
+        if not credit_row:
+            credit_row = _find_account(rows, [r"payable", r"creditor"])
+
     if not credit_row:
-        credit_row = _find_account(rows, [r"payable", r"creditor"])
+        if hint_low in ("bank", "cash", "cash_and_bank", "petty_cash", "petty"):
+            credit_row = accounts["by_code"].get("BS_CA_1000") or {"code": "BS_CA_1000", "name": "Cash and Cash Equivalents"}
+        else:
+            credit_row = accounts["by_code"].get("BS_CL_2000") or {"code": "BS_CL_2000", "name": "Accounts Payable"}
 
     lines: List[Dict[str, Any]] = []
 

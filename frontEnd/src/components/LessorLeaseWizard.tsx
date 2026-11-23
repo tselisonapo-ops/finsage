@@ -74,6 +74,22 @@ type CompanyProfile = {
   industry_profile?: CompanyIndustryProfile;
 };
 
+type CompanyBankAccount = {
+  id: number;
+  name?: string;
+  bank_name?: string;
+  account_name?: string;
+  account_number?: string;
+  account_number_masked?: string;
+  branch_code?: string;
+  swift_code?: string;
+  currency?: string;
+  ledger_account_code?: string | null;
+  is_default_receipts?: boolean;
+  is_default_payments?: boolean;
+  is_active?: boolean;
+};
+
 type Props = {
   companyId: number;
   selectedAccountCode?: string;
@@ -260,6 +276,12 @@ const LessorLeaseWizard: React.FC<Props> = ({
 
   const [directCostBankAccountId, setDirectCostBankAccountId] =
     useState("");
+
+  const [companyBankAccounts, setCompanyBankAccounts] =
+    useState<CompanyBankAccount[]>([]);
+
+  const [loadingCompanyBankAccounts, setLoadingCompanyBankAccounts] =
+    useState<boolean>(false);
 
   const [directCostPaymentError, setDirectCostPaymentError] =
     useState<string | null>(null);
@@ -659,6 +681,44 @@ useEffect(() => {
       active = false;
     };
   }, [companyId]);
+
+  const loadCompanyBankAccounts = useCallback(async () => {
+    if (!companyId) return;
+
+    try {
+      setLoadingCompanyBankAccounts(true);
+      const response = await apiFetch(
+        `/api/companies/${companyId}/bank_accounts`,
+        { method: "GET" }
+      );
+
+      const rows = Array.isArray(response)
+        ? response
+        : (response?.rows || response?.items || response?.banks || response?.bank_accounts || []);
+
+      const validRows: CompanyBankAccount[] = rows
+        .map((row: any) => ({
+          ...row,
+          id: Number(row.id),
+        }))
+        .filter(
+          (row: any) =>
+            Number.isFinite(row.id) &&
+            row.id > 0 &&
+            row.is_active !== false
+        );
+
+      setCompanyBankAccounts(validRows);
+    } catch (err) {
+      console.error("[LESSOR] Failed to load company bank accounts", err);
+    } finally {
+      setLoadingCompanyBankAccounts(false);
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    loadCompanyBankAccounts();
+  }, [loadCompanyBankAccounts]);
 
   const coaByCode = useMemo(() => {
     return new Map(
@@ -1517,6 +1577,9 @@ useEffect(() => {
       if (idcPendingRecognition) {
         setDirectCostLeaseId(leaseId);
         setShowDirectCostModal(true);
+        if (!companyBankAccounts.length) {
+          loadCompanyBankAccounts();
+        }
       }
 
       console.log("[LESSOR] lease commenced", {
@@ -4326,6 +4389,9 @@ useEffect(() => {
                   onClick={() => {
                     setDirectCostPaymentError(null);
                     setShowPaidDirectCostForm(true);
+                    if (!companyBankAccounts.length) {
+                      loadCompanyBankAccounts();
+                    }
                   }}
                   style={{
                     padding: "12px 14px",
@@ -4454,6 +4520,7 @@ useEffect(() => {
                       onChange={(event) =>
                         setDirectCostBankAccountId(event.target.value)
                       }
+                      disabled={loadingCompanyBankAccounts || directCostPaymentSubmitting}
                       style={{
                         width: "100%",
                         boxSizing: "border-box",
@@ -4463,25 +4530,58 @@ useEffect(() => {
                         background: "#fff",
                       }}
                     >
-                      <option value="">Select bank account...</option>
-                      {coaAccounts
-                        .filter((account) => {
-                          const description = accountText(account);
-                          return (
-                            description.includes("bank") ||
-                            description.includes("cash and cash") ||
-                            description.includes("cash equivalent")
-                          );
-                        })
-                        .map((account) => (
+                      <option value="">
+                        {loadingCompanyBankAccounts
+                          ? "Loading company bank accounts..."
+                          : companyBankAccounts.length === 0
+                          ? "No company bank accounts found"
+                          : "Select bank account..."}
+                      </option>
+                      {companyBankAccounts.map((account) => {
+                        const accNumber =
+                          account.account_number || account.account_number_masked;
+                        const labelParts = [
+                          account.bank_name,
+                          account.account_name,
+                          accNumber ? `A/C: ${accNumber}` : null,
+                          account.currency ? `(${account.currency})` : null,
+                        ].filter(Boolean);
+
+                        const label =
+                          labelParts.length > 0
+                            ? labelParts.join(" - ")
+                            : `Bank Account ${account.id}`;
+
+                        const ledgerCode = (account.ledger_account_code || "").trim();
+                        const isMissingLedger = !ledgerCode;
+
+                        return (
                           <option
                             key={account.id}
-                            value={account.id}
+                            value={String(account.id)}
+                            disabled={isMissingLedger}
                           >
-                            {account.code} - {account.name}
+                            {label}
+                            {account.is_default_payments ? " (Default)" : ""}
+                            {ledgerCode
+                              ? ` [GL: ${ledgerCode}]`
+                              : " (Missing linked ledger code)"}
                           </option>
-                        ))}
+                        );
+                      })}
                     </select>
+                    {companyBankAccounts.length === 0 && !loadingCompanyBankAccounts && (
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 12,
+                          color: "#b91c1c",
+                          marginTop: 4,
+                        }}
+                      >
+                        No active company bank accounts found. Please configure a company bank account first.
+                      </span>
+                    )}
                   </div>
 
                   <div>

@@ -279,17 +279,37 @@ class BillingService:
                         exc_info=True)
 
     def _plan(self, cur, plan_code):
+        plan_code_clean = (str(plan_code) if plan_code is not None else "").strip()
         cur.execute(
             """
             SELECT id, plan_code, monthly_amount, annual_amount, trial_days,
                    currency
             FROM public.subscription_plans
-            WHERE plan_code = %s AND is_active = TRUE
+            WHERE LOWER(TRIM(plan_code)) = LOWER(TRIM(%s)) AND is_active = TRUE
             LIMIT 1
             """,
-            (plan_code,),
+            (plan_code_clean,),
         )
         row = cur.fetchone()
+        if not row:
+            try:
+                from BackEnd.Services.plans_seed import ensure_plans_seeded
+                from BackEnd.Services.practice_seed import ensure_practice_seeded
+                ensure_plans_seeded(self.db)
+                ensure_practice_seeded(self.db)
+                cur.execute(
+                    """
+                    SELECT id, plan_code, monthly_amount, annual_amount, trial_days,
+                           currency
+                    FROM public.subscription_plans
+                    WHERE LOWER(TRIM(plan_code)) = LOWER(TRIM(%s)) AND is_active = TRUE
+                    LIMIT 1
+                    """,
+                    (plan_code_clean,),
+                )
+                row = cur.fetchone()
+            except Exception as e:
+                log.warning("Auto-seeding subscription plans failed: %s", e)
         if not row:
             raise ValueError(f"plan not found or inactive: {plan_code}")
         cols = ("id", "plan_code", "monthly_amount", "annual_amount",
@@ -336,13 +356,13 @@ class BillingService:
     # ------------------------------------------------------------------
 
     def provision_trial(self, company_id, plan_code=None, trial_days=None,
-                        actor_user_id=None, source="signup"):
+                        actor_user_id=None, source="signup", metadata=None):
         """
         Starts the no-card trial. The subscription ROW points at the
         trial-experience plan (default premium) so entitlements resolve
         exactly like a paying premium company — status 'trialing'.
         Idempotent: an existing active/trialing subscription is returned
-        untouched.
+        untouched unless requested from Control to explicitly provision/override.
         """
         plan_code = plan_code or TRIAL_EXPERIENCE_PLAN
         conn = self.db.get_conn()
@@ -352,15 +372,11 @@ class BillingService:
                     """
                     SELECT id, status FROM public.company_subscriptions
                     WHERE company_id = %s
-                      AND status IN ('trialing', 'active')
                     ORDER BY created_at DESC LIMIT 1
                     """,
                     (company_id,),
                 )
                 existing = cur.fetchone()
-                if existing:
-                    return {"subscription_id": existing[0],
-                            "created": False, "status": existing[1]}
 
                 plan = self._plan(cur, plan_code)
                 trial_days = int(
@@ -374,28 +390,57 @@ class BillingService:
                     "trial": True,
                     "trial_experience_plan": plan_code,
                     "source": source,
+                    **(metadata or {}),
                 }
 
-                cur.execute(
-                    """
-                    INSERT INTO public.company_subscriptions (
-                        company_id, plan_id, status, billing_status,
-                        billing_interval, currency, amount,
-                        started_at, trial_ends_at, metadata
+                if existing and source == "control":
+                    sub_id = existing[0]
+                    cur.execute(
+                        """
+                        UPDATE public.company_subscriptions
+                        SET plan_id = %s, status = 'trialing', billing_status = 'none',
+                            billing_interval = 'monthly', currency = %s, amount = 0,
+                            started_at = %s, trial_ends_at = %s,
+                            current_period_start = %s, current_period_end = %s,
+                            next_billing_at = %s, cancelled_at = NULL,
+                            cancellation_effective_at = NULL,
+                            metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        RETURNING id
+                        """,
+                        (plan["id"], plan["currency"], start, trial_end,
+                         start, trial_end, trial_end, json.dumps(meta), sub_id),
                     )
-                    VALUES (%s, %s, 'trialing', 'none',
-                            'monthly', %s, 0, %s, %s, %s::jsonb)
-                    RETURNING id
-                    """,
-                    (company_id, plan["id"], plan["currency"], start,
-                     trial_end, json.dumps(meta)),
-                )
-                sub_id = cur.fetchone()[0]
-                self._event(
-                    cur, sub_id, company_id, "trial_started",
-                    description=f"plan={plan_code} trial_days={trial_days}",
-                    effective_at=trial_end,
-                )
+                    self._event(
+                        cur, sub_id, company_id, "trial_started",
+                        description=f"plan={plan_code} trial_days={trial_days} (provisioned via control)",
+                        effective_at=trial_end,
+                    )
+                elif existing and existing[1] in ('trialing', 'active'):
+                    return {"subscription_id": existing[0],
+                            "created": False, "status": existing[1]}
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO public.company_subscriptions (
+                            company_id, plan_id, status, billing_status,
+                            billing_interval, currency, amount,
+                            started_at, trial_ends_at, metadata
+                        )
+                        VALUES (%s, %s, 'trialing', 'none',
+                                'monthly', %s, 0, %s, %s, %s::jsonb)
+                        RETURNING id
+                        """,
+                        (company_id, plan["id"], plan["currency"], start,
+                         trial_end, json.dumps(meta)),
+                    )
+                    sub_id = cur.fetchone()[0]
+                    self._event(
+                        cur, sub_id, company_id, "trial_started",
+                        description=f"plan={plan_code} trial_days={trial_days}",
+                        effective_at=trial_end,
+                    )
             conn.commit()
         except Exception:
             conn.rollback()
@@ -643,7 +688,7 @@ class BillingService:
                         (
                             plan["id"],
                             "current" if float(amount) == 0 else "pending",
-                            interval, plan_code, amount,
+                            interval, plan["currency"], amount,
                             now, start, end, end,
                             json.dumps({
                                 **(sub["metadata"] or {}),

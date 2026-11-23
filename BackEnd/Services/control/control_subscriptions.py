@@ -447,30 +447,80 @@ def provision_subscription(company_id):
     Body:
       mode: "trial" | "commit" (default "trial")
       plan_code: "business" | "premium" | "enterprise" (default "premium")
-      trial_days: int (default 14, for trial mode)
+      trial_days: int (default 14, for trial mode, e.g. 14, 30, 90)
       billing_interval: "monthly" | "annual" (for commit mode)
       reason: str
+      is_founding_partner: bool
+      discount_percent: float
+      discount_type: "percent" | "fixed" | "founding_partner"
+      special_case_notes: str
+      industry: str
     """
     billing = _billing_service()
     if billing is None:
         return _billing_unavailable()
 
+    # Verify company exists in public.companies
+    try:
+        co = g.control_service.db.fetch_one(
+            "SELECT id, name, industry FROM public.companies WHERE id = %s",
+            (company_id,)
+        )
+        if not co:
+            return jsonify({"error": f"Company #{company_id} does not exist"}), 404
+    except Exception as exc:
+        current_app.logger.warning("Failed checking company existence: %s", exc)
+
     body = _body()
     mode = (body.get("mode") or "trial").strip().lower()
     plan_code = (body.get("plan_code") or "premium").strip().lower()
-    trial_days = body.get("trial_days")
+    
+    # Robust parsing of trial_days
+    raw_days = body.get("trial_days")
+    days = 14
+    if raw_days is not None:
+        try:
+            cleaned_str = str(raw_days).lower().replace("d", "").replace("days", "").strip()
+            days = int(cleaned_str)
+        except (ValueError, TypeError):
+            days = 14
+
     billing_interval = (body.get("billing_interval") or "monthly").strip().lower()
     reason = (body.get("reason") or "").strip() or None
 
+    # Special case and partner metadata
+    special_meta = {}
+    if body.get("is_founding_partner"):
+        special_meta["is_founding_partner"] = True
+        special_meta["partner_tier"] = "founding_partner"
+    if body.get("discount_percent") is not None and str(body.get("discount_percent")).strip() != "":
+        try:
+            special_meta["discount_percent"] = float(body.get("discount_percent"))
+        except (ValueError, TypeError):
+            pass
+    if body.get("discount_type"):
+        special_meta["discount_type"] = str(body.get("discount_type")).strip()
+    if body.get("discount_amount") is not None and str(body.get("discount_amount")).strip() != "":
+        try:
+            special_meta["discount_amount"] = float(body.get("discount_amount"))
+        except (ValueError, TypeError):
+            pass
+    if body.get("special_case_notes"):
+        special_meta["special_case_notes"] = str(body.get("special_case_notes")).strip()
+    if body.get("industry"):
+        special_meta["industry"] = str(body.get("industry")).strip()
+    if reason:
+        special_meta["provision_reason"] = reason
+
     try:
         if mode == "trial":
-            days = int(trial_days) if trial_days is not None else 14
             result = billing.provision_trial(
                 company_id,
                 plan_code=plan_code,
                 trial_days=days,
                 actor_user_id=g.user_id,
                 source="control",
+                metadata=special_meta,
             )
         else:
             result = billing.commit_plan(
@@ -482,6 +532,7 @@ def provision_subscription(company_id):
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
+        current_app.logger.exception("Subscription provisioning (%s) failed", mode)
         return jsonify({
             "error": f"Subscription provisioning ({mode}) failed",
             "detail": str(exc),
@@ -493,11 +544,11 @@ def provision_subscription(company_id):
         entity_type="company_subscription",
         entity_id=(after or {}).get("subscription_id"),
         description=(
-            f"provisioned {mode} plan={plan_code} for company {company_id}"
+            f"provisioned {mode} plan={plan_code} ({days}d) for company {company_id}"
             + (f" — {reason}" if reason else "")
         ),
         after=after,
-        metadata={"via": "control", "company_id": company_id, "mode": mode},
+        metadata={"via": "control", "company_id": company_id, "mode": mode, **special_meta},
     )
     return jsonify({"ok": True, "mode": mode, "result": result, "subscription": after})
 

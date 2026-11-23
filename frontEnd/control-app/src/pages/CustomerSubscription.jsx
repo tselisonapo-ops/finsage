@@ -146,25 +146,51 @@ function InfoRow({ label, value }) {
   )
 }
 
-function ProvisionSection({ companyId, onDone }) {
+function ProvisionSection({ companyId, company, onDone }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [mode, setMode] = useState('trial')
   const [planCode, setPlanCode] = useState('premium')
-  const [trialDays, setTrialDays] = useState(14)
+  
+  const industryLower = `${company?.industry || ''} ${company?.sub_industry || ''}`.toLowerCase()
+  const isProfServices =
+    industryLower.includes('professional') ||
+    industryLower.includes('accounting') ||
+    industryLower.includes('legal') ||
+    industryLower.includes('law') ||
+    industryLower.includes('audit') ||
+    industryLower.includes('consult') ||
+    industryLower.includes('tax')
+
+  const [trialDays, setTrialDays] = useState(isProfServices ? 90 : 30)
+  const [customDays, setCustomDays] = useState('')
+  const [isCustomDays, setIsCustomDays] = useState(false)
   const [billingInterval, setBillingInterval] = useState('monthly')
   const [reason, setReason] = useState('')
+
+  // Special cases state
+  const [hasDiscount, setHasDiscount] = useState(false)
+  const [discountPercent, setDiscountPercent] = useState('20')
+  const [isFoundingPartner, setIsFoundingPartner] = useState(false)
+  const [specialCaseNotes, setSpecialCaseNotes] = useState('')
 
   const handleProvision = async () => {
     setBusy(true)
     setError('')
     try {
+      const effectiveDays = isCustomDays && customDays ? parseInt(customDays, 10) : trialDays
+
       await api.post(`/subscriptions/${companyId}/provision`, {
         mode,
         plan_code: planCode,
-        trial_days: mode === 'trial' ? trialDays : undefined,
+        trial_days: mode === 'trial' ? effectiveDays : undefined,
         billing_interval: mode === 'commit' ? billingInterval : undefined,
         reason: reason.trim() || undefined,
+        is_founding_partner: isFoundingPartner || undefined,
+        discount_percent: hasDiscount && discountPercent ? parseFloat(discountPercent) : undefined,
+        discount_type: hasDiscount ? 'percent' : undefined,
+        special_case_notes: specialCaseNotes.trim() || undefined,
+        industry: company?.industry || undefined,
       })
       onDone?.()
     } catch (err) {
@@ -174,19 +200,55 @@ function ProvisionSection({ companyId, onDone }) {
     }
   }
 
+  const durationOptions = isProfServices ? [14, 30, 60, 90] : [7, 14, 30, 90]
+
   return (
     <div className="bg-surface-800 border border-surface-600 rounded-xl p-6 space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-accent-muted flex items-center justify-center text-accent">
-          <Sparkles size={20} />
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-accent-muted flex items-center justify-center text-accent">
+            <Sparkles size={20} />
+          </div>
+          <div>
+            <h2 className="font-semibold text-surface-100">Provision Subscription & Trial</h2>
+            <p className="text-xs text-surface-400">
+              Configure company tier, trial duration, and partner concessions:
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="font-semibold text-surface-100">No Subscription Recorded</h2>
-          <p className="text-xs text-surface-400">
-            This company does not currently have an active subscription or trial. Provision one below:
-          </p>
-        </div>
+
+        {company?.industry && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-900 border border-surface-700 text-xs text-surface-300">
+            <span>Industry: <strong className="text-surface-100">{company.industry}</strong></span>
+            {isProfServices && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-accent/20 text-accent">
+                Professional Services
+              </span>
+            )}
+          </div>
+        )}
       </div>
+
+      {isProfServices && (
+        <div className="p-3 bg-accent/10 border border-accent/30 rounded-lg flex items-center justify-between text-xs text-accent">
+          <div className="flex items-center gap-2">
+            <Sparkles size={14} className="shrink-0" />
+            <span>
+              <strong>Professional Services Industry Detected:</strong> This firm qualifies for the <strong>90-Day Free Trial</strong> extended onboarding window.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setTrialDays(90)
+              setIsCustomDays(false)
+            }}
+            className="px-2.5 py-1 bg-accent text-white rounded font-medium text-[11px] hover:opacity-90 transition-opacity ml-2 shrink-0"
+          >
+            Apply 90 Days
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="p-3 text-xs text-error bg-error/10 border border-error/30 rounded-lg">
@@ -222,37 +284,66 @@ function ProvisionSection({ companyId, onDone }) {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs font-medium text-surface-300 mb-1">Plan</label>
+            <label className="block text-xs font-medium text-surface-300 mb-1">Plan Tier</label>
             <select
               value={planCode}
               onChange={(e) => setPlanCode(e.target.value)}
               className="w-full bg-surface-900 border border-surface-600 rounded-lg px-3 py-2 text-xs text-surface-100 focus:outline-none focus:border-accent"
             >
-              <option value="business">Business</option>
-              <option value="premium">Premium</option>
-              <option value="enterprise">Enterprise</option>
+              <option value="business">Business (M299/mo)</option>
+              <option value="premium">Premium (M649/mo)</option>
+              <option value="enterprise">Enterprise (M1,399/mo)</option>
             </select>
           </div>
 
           {mode === 'trial' ? (
             <div>
-              <label className="block text-xs font-medium text-surface-300 mb-1">Trial Duration</label>
-              <div className="flex gap-2">
-                {[7, 14, 30].map((d) => (
+              <label className="block text-xs font-medium text-surface-300 mb-1">
+                Trial Duration {isProfServices ? '(90d recommended for Pro Services)' : ''}
+              </label>
+              <div className="flex gap-1.5 flex-wrap">
+                {durationOptions.map((d) => (
                   <button
                     key={d}
                     type="button"
-                    onClick={() => setTrialDays(d)}
-                    className={`flex-1 py-2 text-xs rounded-lg border transition-colors ${
-                      trialDays === d
-                        ? 'border-accent text-accent bg-accent/10 font-medium'
+                    onClick={() => {
+                      setTrialDays(d)
+                      setIsCustomDays(false)
+                    }}
+                    className={`flex-1 min-w-[42px] py-2 text-xs rounded-lg border transition-colors ${
+                      !isCustomDays && trialDays === d
+                        ? 'border-accent text-accent bg-accent/15 font-semibold shadow-sm'
                         : 'border-surface-600 text-surface-400 hover:bg-surface-800'
                     }`}
                   >
                     {d}d
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setIsCustomDays(true)}
+                  className={`px-2.5 py-2 text-xs rounded-lg border transition-colors ${
+                    isCustomDays
+                      ? 'border-accent text-accent bg-accent/15 font-semibold'
+                      : 'border-surface-600 text-surface-400 hover:bg-surface-800'
+                  }`}
+                >
+                  Custom
+                </button>
               </div>
+              {isCustomDays && (
+                <div className="mt-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="365"
+                    value={customDays}
+                    onChange={(e) => setCustomDays(e.target.value)}
+                    placeholder="Enter days (1-365)"
+                    className="w-full bg-surface-900 border border-surface-600 rounded-lg px-3 py-1.5 text-xs text-surface-100 focus:outline-none focus:border-accent"
+                  />
+                </div>
+              )}
             </div>
           ) : (
             <div>
@@ -263,7 +354,7 @@ function ProvisionSection({ companyId, onDone }) {
                 className="w-full bg-surface-900 border border-surface-600 rounded-lg px-3 py-2 text-xs text-surface-100 focus:outline-none focus:border-accent"
               >
                 <option value="monthly">Monthly</option>
-                <option value="annual">Annual (Yearly)</option>
+                <option value="annual">Annual (Yearly - 2 months free)</option>
               </select>
             </div>
           )}
@@ -274,10 +365,95 @@ function ProvisionSection({ companyId, onDone }) {
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Sales onboarding"
+              placeholder="e.g. Sales onboarding / Partner incentive"
               className="w-full bg-surface-900 border border-surface-600 rounded-lg px-3 py-2 text-xs text-surface-100 placeholder:text-surface-500 focus:outline-none focus:border-accent"
             />
           </div>
+        </div>
+
+        {/* Special Cases & Partner Concessions */}
+        <div className="pt-3 border-t border-surface-800 space-y-3">
+          <div className="text-xs font-medium text-surface-300 uppercase tracking-wider">
+            Special Cases & Partner Options
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Founding Partner Checkbox */}
+            <label className="flex items-start gap-2.5 p-3 rounded-lg border border-surface-700 bg-surface-900/40 cursor-pointer hover:border-surface-600 transition-colors">
+              <input
+                type="checkbox"
+                checked={isFoundingPartner}
+                onChange={(e) => setIsFoundingPartner(e.target.checked)}
+                className="mt-0.5 rounded border-surface-600 text-accent focus:ring-accent"
+              />
+              <div className="text-xs">
+                <div className="font-medium text-surface-200">Founding Partner Program</div>
+                <div className="text-surface-400 text-[11px] mt-0.5">
+                  Flags company as an early strategic adopter with VIP privileges and grandfathered terms.
+                </div>
+              </div>
+            </label>
+
+            {/* Discounted Subscription Checkbox */}
+            <label className="flex items-start gap-2.5 p-3 rounded-lg border border-surface-700 bg-surface-900/40 cursor-pointer hover:border-surface-600 transition-colors">
+              <input
+                type="checkbox"
+                checked={hasDiscount}
+                onChange={(e) => setHasDiscount(e.target.checked)}
+                className="mt-0.5 rounded border-surface-600 text-accent focus:ring-accent"
+              />
+              <div className="text-xs">
+                <div className="font-medium text-surface-200">Discounted Subscription</div>
+                <div className="text-surface-400 text-[11px] mt-0.5">
+                  Apply a special commercial concession or partner promotional discount.
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {hasDiscount && (
+            <div className="p-3 bg-surface-900 border border-surface-700 rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fadeIn">
+              <div>
+                <label className="block text-xs font-medium text-surface-300 mb-1">Discount Percentage (%)</label>
+                <div className="flex gap-2">
+                  {['10', '20', '30', '50'].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => setDiscountPercent(pct)}
+                      className={`px-3 py-1.5 text-xs rounded border transition-colors ${
+                        discountPercent === pct
+                          ? 'border-accent text-accent bg-accent/10 font-medium'
+                          : 'border-surface-600 text-surface-400 hover:bg-surface-800'
+                      }`}
+                    >
+                      {pct}%
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={discountPercent}
+                    onChange={(e) => setDiscountPercent(e.target.value)}
+                    className="w-20 bg-surface-800 border border-surface-600 rounded px-2 text-xs text-surface-100 text-center"
+                    placeholder="Custom %"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-surface-300 mb-1">Discount Justification / Note</label>
+                <input
+                  type="text"
+                  value={specialCaseNotes}
+                  onChange={(e) => setSpecialCaseNotes(e.target.value)}
+                  placeholder="e.g. Founding partner agreement #FP-2026"
+                  className="w-full bg-surface-800 border border-surface-600 rounded px-3 py-1.5 text-xs text-surface-100 placeholder:text-surface-500 focus:outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end pt-2">
@@ -285,10 +461,10 @@ function ProvisionSection({ companyId, onDone }) {
             type="button"
             disabled={busy}
             onClick={handleProvision}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90 disabled:opacity-40"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-semibold bg-accent text-white hover:opacity-90 disabled:opacity-40 shadow-sm"
           >
             {busy && <Loader2 size={13} className="animate-spin" />}
-            {mode === 'trial' ? 'Start Free Trial' : 'Provision Subscription & Charge'}
+            {mode === 'trial' ? `Start ${isCustomDays && customDays ? customDays : trialDays}-Day Free Trial` : 'Provision Subscription & Charge'}
           </button>
         </div>
       </div>
@@ -722,7 +898,7 @@ export default function CustomerSubscription() {
 
       {/* No Subscription State with direct Provisioning Action */}
       {!subscription ? (
-        <ProvisionSection companyId={companyId} onDone={reload} />
+        <ProvisionSection companyId={companyId} company={company} onDone={reload} />
       ) : (
         <>
           {/* Summary Cards */}

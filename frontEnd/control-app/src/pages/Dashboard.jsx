@@ -9,13 +9,15 @@ import { timeAgo } from '../lib/constants'
 import { playAlertDebounced } from '../lib/sound'
 
 import {
-  Ticket, AlertTriangle, Clock, TrendingUp, Activity, ArrowUpRight, ExternalLink
+  Ticket, AlertTriangle, Clock, TrendingUp, Activity, ArrowUpRight, ExternalLink,
+  CreditCard, Users, Wallet, CalendarDays, Sparkles, CheckCircle2
 } from 'lucide-react'
 
 export default function Dashboard() {
   const { agent } = useAuth()
   const navigate = useNavigate()
   const [stats, setStats] = useState(null)
+  const [subStats, setSubStats] = useState(null)
   const [systemErrors, setSystemErrors] = useState([])
   const [loading, setLoading] = useState(true)
   const [errorsLoading, setErrorsLoading] = useState(true)
@@ -26,9 +28,19 @@ export default function Dashboard() {
 
   useEffect(() => {
     api.get('/dashboard')
-      .then(setStats)
+      .then((data) => {
+        setStats(data)
+        if (data?.subscriptions) {
+          setSubStats(data.subscriptions)
+        }
+      })
       .catch(console.error)
       .finally(() => setLoading(false))
+
+    // Also fetch dedicated subscription overview
+    api.get('/subscriptions/overview')
+      .then(setSubStats)
+      .catch((err) => console.warn('Could not load subscription overview:', err))
 
     const loadSystemErrors = () => {
       api.get('/system/errors?limit=20')
@@ -129,6 +141,87 @@ export default function Dashboard() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Subscription Insights */}
+      <div className="bg-surface-800 rounded-xl border border-surface-600 mb-6 overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-surface-600 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center text-accent">
+              <CreditCard size={15} />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-surface-100 flex items-center gap-2">
+                Subscription Insights & Commercial Fleet
+              </h3>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => navigate('/subscriptions')}
+            className="text-xs text-accent hover:text-accent-hover flex items-center gap-1 font-medium transition-colors"
+          >
+            Open Fleet Cockpit
+            <ExternalLink size={12} />
+          </button>
+        </div>
+
+        <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {/* MRR */}
+          <div className="p-3 rounded-lg bg-surface-900/60 border border-surface-700/60">
+            <div className="text-[11px] font-medium text-surface-400">Monthly Recurring (MRR)</div>
+            <div className="text-lg font-bold text-accent mt-0.5">
+              M {(Number(subStats?.mrr || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+            </div>
+            <div className="text-[10px] text-surface-400 mt-0.5">Run rate active</div>
+          </div>
+
+          {/* Active Subscriptions */}
+          <div className="p-3 rounded-lg bg-surface-900/60 border border-surface-700/60">
+            <div className="text-[11px] font-medium text-surface-400">Active Paid Plans</div>
+            <div className="text-lg font-bold text-success mt-0.5">
+              {subStats?.active ?? '—'}
+            </div>
+            <div className="text-[10px] text-surface-400 mt-0.5">Paying customers</div>
+          </div>
+
+          {/* Free Trials Active */}
+          <div className="p-3 rounded-lg bg-surface-900/60 border border-surface-700/60">
+            <div className="text-[11px] font-medium text-surface-400">Free Trials Active</div>
+            <div className="text-lg font-bold text-info mt-0.5">
+              {subStats?.trialing ?? '—'}
+            </div>
+            <div className="text-[10px] text-surface-400 mt-0.5">Onboarding companies</div>
+          </div>
+
+          {/* Trials Ending Soon */}
+          <div className="p-3 rounded-lg bg-surface-900/60 border border-surface-700/60">
+            <div className="text-[11px] font-medium text-surface-400">Trials Ending (7d)</div>
+            <div className={`text-lg font-bold mt-0.5 ${Number(subStats?.trials_ending_7d || 0) > 0 ? 'text-amber-400' : 'text-surface-200'}`}>
+              {subStats?.trials_ending_7d ?? '—'}
+            </div>
+            <div className="text-[10px] text-surface-400 mt-0.5">Needs conversion</div>
+          </div>
+
+          {/* Past Due */}
+          <div className="p-3 rounded-lg bg-surface-900/60 border border-surface-700/60">
+            <div className="text-[11px] font-medium text-surface-400">Past Due / Dunning</div>
+            <div className={`text-lg font-bold mt-0.5 ${Number(subStats?.past_due || 0) > 0 ? 'text-p1' : 'text-surface-200'}`}>
+              {subStats?.past_due ?? '—'}
+            </div>
+            <div className="text-[10px] text-surface-400 mt-0.5">Payment pending</div>
+          </div>
+
+          {/* Grace Period */}
+          <div className="p-3 rounded-lg bg-surface-900/60 border border-surface-700/60">
+            <div className="text-[11px] font-medium text-surface-400">Read-Only Grace</div>
+            <div className="text-lg font-bold text-surface-200 mt-0.5">
+              {subStats?.grace ?? '—'}
+            </div>
+            <div className="text-[10px] text-surface-400 mt-0.5">14d grace period</div>
+          </div>
+        </div>
       </div>
 
       {/* System Alerts */}

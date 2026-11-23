@@ -106566,6 +106566,456 @@ class DatabaseService:
             return cur.fetchone()
 
     # ==========================================
+    # BUSINESS WHATSAPP & POS INVOICE SHARING
+    # ==========================================
+    def ensure_whatsapp_tables(self, company_id: int):
+        schema = self.company_schema(company_id)
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {schema}.company_integrations (
+                    id SERIAL PRIMARY KEY,
+                    company_id INT NOT NULL,
+                    integration_type TEXT NOT NULL,
+                    is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    config JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+                    credentials JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS {schema}_company_integrations_type_uniq
+                ON {schema}.company_integrations(company_id, lower(trim(integration_type)));
+
+                CREATE TABLE IF NOT EXISTS {schema}.whatsapp_delivery_logs (
+                    id SERIAL PRIMARY KEY,
+                    company_id INT NOT NULL,
+                    sale_id INT NOT NULL REFERENCES {schema}.pos_sales(id) ON DELETE CASCADE,
+                    invoice_number TEXT NOT NULL,
+                    customer_number TEXT NOT NULL,
+                    sender_number TEXT NULL,
+                    delivery_method TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    message_id TEXT NULL,
+                    error_message TEXT NULL,
+                    metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+                    sent_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE INDEX IF NOT EXISTS {schema}_wa_logs_sale_idx
+                ON {schema}.whatsapp_delivery_logs(company_id, sale_id);
+            """)
+
+    def get_whatsapp_settings(self, company_id: int, include_secrets: bool = False) -> dict:
+        self.ensure_whatsapp_tables(company_id)
+        schema = self.company_schema(company_id)
+        row = self.fetch_one(f"""
+            SELECT * FROM {schema}.company_integrations
+            WHERE company_id = %s AND lower(integration_type) = 'whatsapp'
+            LIMIT 1
+        """, (int(company_id),))
+        if not row:
+            return {
+                "is_enabled": False,
+                "business_number": "",
+                "integration_method": "web_desktop", # web_desktop | cloud_api
+                "waba_id": "",
+                "phone_number_id": "",
+                "has_access_token": False,
+                "access_token": "" if include_secrets else "",
+                "business_display_name": "",
+                "default_message": "Hello,\nThank you for shopping with us!\nPlease find your sales invoice attached.\nInvoice: {invoice_number}\nAmount: {amount}\nWe appreciate your business.",
+                "automatic_delivery": False,
+                "coexistence_eligible": True,
+            }
+        config = row.get("config") or {}
+        credentials = row.get("credentials") or {}
+        token = credentials.get("access_token") or ""
+        return {
+            "id": row.get("id"),
+            "is_enabled": bool(row.get("is_enabled")),
+            "business_number": config.get("business_number") or "",
+            "integration_method": config.get("integration_method") or "web_desktop",
+            "waba_id": config.get("waba_id") or "",
+            "phone_number_id": config.get("phone_number_id") or "",
+            "has_access_token": bool(token),
+            "access_token": token if include_secrets else ("••••••••" if token else ""),
+            "business_display_name": config.get("business_display_name") or "",
+            "default_message": config.get("default_message") or "Hello,\nThank you for shopping with us!\nPlease find your sales invoice attached.\nInvoice: {invoice_number}\nAmount: {amount}\nWe appreciate your business.",
+            "automatic_delivery": bool(config.get("automatic_delivery")),
+            "coexistence_eligible": bool(config.get("coexistence_eligible", True)),
+            "updated_at": row.get("updated_at"),
+        }
+
+    def save_whatsapp_settings(self, company_id: int, data: dict) -> dict:
+        import json
+        self.ensure_whatsapp_tables(company_id)
+        schema = self.company_schema(company_id)
+        current = self.get_whatsapp_settings(company_id, include_secrets=True)
+
+        is_enabled = bool(data.get("is_enabled", current.get("is_enabled")))
+        config = {
+            "business_number": (data.get("business_number") or current.get("business_number") or "").strip(),
+            "integration_method": (data.get("integration_method") or current.get("integration_method") or "web_desktop").strip(),
+            "waba_id": (data.get("waba_id") or current.get("waba_id") or "").strip(),
+            "phone_number_id": (data.get("phone_number_id") or current.get("phone_number_id") or "").strip(),
+            "business_display_name": (data.get("business_display_name") or current.get("business_display_name") or "").strip(),
+            "default_message": (data.get("default_message") or current.get("default_message") or "").strip(),
+            "automatic_delivery": bool(data.get("automatic_delivery", current.get("automatic_delivery"))),
+            "coexistence_eligible": bool(data.get("coexistence_eligible", True)),
+        }
+
+        # Keep existing access token if not provided or if masked
+        raw_token = (data.get("access_token") or "").strip()
+        access_token = current.get("access_token") if (not raw_token or "••••" in raw_token) else raw_token
+        credentials = {"access_token": access_token}
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"""
+                INSERT INTO {schema}.company_integrations (
+                    company_id, integration_type, is_enabled, config, credentials, updated_at
+                )
+                VALUES (%s, 'whatsapp', %s, %s::jsonb, %s::jsonb, NOW())
+                ON CONFLICT (company_id, lower(trim(integration_type)))
+                DO UPDATE SET
+                    is_enabled = EXCLUDED.is_enabled,
+                    config = EXCLUDED.config,
+                    credentials = CASE
+                        WHEN length(%s) > 0 THEN EXCLUDED.credentials
+                        ELSE {schema}.company_integrations.credentials
+                    END,
+                    updated_at = NOW()
+                RETURNING *;
+            """, (
+                int(company_id),
+                is_enabled,
+                json.dumps(config),
+                json.dumps(credentials),
+                access_token,
+            ))
+            row = cur.fetchone()
+        return self.get_whatsapp_settings(company_id, include_secrets=False)
+
+    def log_whatsapp_delivery(self, company_id: int, log_data: dict) -> int:
+        import json
+        self.ensure_whatsapp_tables(company_id)
+        schema = self.company_schema(company_id)
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.whatsapp_delivery_logs (
+                company_id, sale_id, invoice_number, customer_number,
+                sender_number, delivery_method, status, message_id,
+                error_message, metadata
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            RETURNING id;
+        """, (
+            int(company_id),
+            int(log_data["sale_id"]),
+            str(log_data.get("invoice_number") or ""),
+            str(log_data.get("customer_number") or ""),
+            log_data.get("sender_number"),
+            str(log_data.get("delivery_method") or "web_desktop"),
+            str(log_data.get("status") or "pending"),
+            log_data.get("message_id"),
+            log_data.get("error_message"),
+            json.dumps(log_data.get("metadata") or {}),
+        ))
+        return int(row["id"]) if row else 0
+
+    def list_whatsapp_delivery_logs(self, company_id: int, sale_id: int = None, limit: int = 50) -> list[dict]:
+        self.ensure_whatsapp_tables(company_id)
+        schema = self.company_schema(company_id)
+        where = "WHERE company_id = %s"
+        params = [int(company_id)]
+        if sale_id is not None:
+            where += " AND sale_id = %s"
+            params.append(int(sale_id))
+        params.append(min(max(limit, 1), 200))
+        return self.fetch_all(f"""
+            SELECT * FROM {schema}.whatsapp_delivery_logs
+            {where}
+            ORDER BY sent_timestamp DESC, id DESC
+            LIMIT %s
+        """, tuple(params)) or []
+
+    # ==========================================
+    # CONSOLIDATED CASH-UP INVOICE REPORTING
+    # ==========================================
+    def ensure_cashup_report_tables(self, company_id: int):
+        schema = self.company_schema(company_id)
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {schema}.cashup_invoice_reports (
+                    id SERIAL PRIMARY KEY,
+                    company_id INT NOT NULL,
+                    shift_id INT NOT NULL REFERENCES {schema}.pos_shifts(id) ON DELETE CASCADE,
+                    report_reference TEXT NOT NULL,
+                    cashier_name TEXT NULL,
+                    shift_title TEXT NULL,
+                    business_date DATE NULL,
+                    generated_by INT NULL,
+                    invoice_count INT NOT NULL DEFAULT 0,
+                    total_invoice_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+                    cash_sales NUMERIC(18,2) NOT NULL DEFAULT 0,
+                    card_sales NUMERIC(18,2) NOT NULL DEFAULT 0,
+                    other_sales NUMERIC(18,2) NOT NULL DEFAULT 0,
+                    grand_total NUMERIC(18,2) NOT NULL DEFAULT 0,
+                    cashup_expected NUMERIC(18,2) NOT NULL DEFAULT 0,
+                    cashup_counted NUMERIC(18,2) NOT NULL DEFAULT 0,
+                    reconciliation_diff NUMERIC(18,2) NOT NULL DEFAULT 0,
+                    print_count INT NOT NULL DEFAULT 0,
+                    last_printed_at TIMESTAMPTZ NULL,
+                    metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS {schema}.cashup_invoice_report_items (
+                    id SERIAL PRIMARY KEY,
+                    company_id INT NOT NULL,
+                    report_id INT NOT NULL REFERENCES {schema}.cashup_invoice_reports(id) ON DELETE CASCADE,
+                    sale_id INT NOT NULL REFERENCES {schema}.pos_sales(id) ON DELETE CASCADE,
+                    invoice_number TEXT NOT NULL,
+                    customer_name TEXT NULL,
+                    sale_type TEXT NULL,
+                    payment_method TEXT NULL,
+                    invoice_date TIMESTAMPTZ NULL,
+                    total_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+                    items_summary JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE INDEX IF NOT EXISTS {schema}_cashup_rep_shift_idx
+                ON {schema}.cashup_invoice_reports(company_id, shift_id);
+            """)
+
+    def get_cashup_session_invoices(self, company_id: int, shift_id: int) -> dict:
+        import json
+        self.ensure_cashup_report_tables(company_id)
+        schema = self.company_schema(company_id)
+
+        # 1. Fetch shift info
+        shift = self.fetch_one(f"""
+            SELECT s.*, u.display_name AS cashier_name, t.terminal_code, t.name AS terminal_name
+            FROM {schema}.pos_shifts s
+            LEFT JOIN public.users u ON u.id = s.cashier_user_id
+            LEFT JOIN {schema}.pos_terminals t ON t.id = s.terminal_id
+            WHERE s.company_id = %s AND s.id = %s
+            LIMIT 1
+        """, (int(company_id), int(shift_id)))
+
+        if not shift:
+            raise ValueError(f"Cash-up session (shift #{shift_id}) not found")
+
+        # 2. Fetch sales belonging to this shift (excluding cancelled and voided sales)
+        sales = self.fetch_all(f"""
+            SELECT s.*, c.customer_name AS customer_full_name, c.phone AS customer_phone
+            FROM {schema}.pos_sales s
+            LEFT JOIN {schema}.customers c ON c.id = s.customer_id
+            WHERE s.company_id = %s
+              AND s.shift_id = %s
+              AND lower(trim(s.status)) NOT IN ('void', 'cancelled', 'draft')
+            ORDER BY s.sale_date ASC, s.id ASC
+        """, (int(company_id), int(shift_id))) or []
+
+        # 3. For each sale, get lines and payments
+        invoices = []
+        cash_total = 0.0
+        card_total = 0.0
+        other_total = 0.0
+        grand_total = 0.0
+
+        for sale in sales:
+            sale_id = int(sale["id"])
+            lines = self.fetch_all(f"""
+                SELECT sl.id, sl.item_id, sl.qty, sl.unit_price, sl.gross_amount,
+                       COALESCE(i.name, 'Item') AS item_name,
+                       COALESCE(i.description, '') AS item_desc
+                FROM {schema}.pos_sale_lines sl
+                LEFT JOIN {schema}.inventory_items i ON i.id = sl.item_id
+                WHERE sl.company_id = %s AND sl.sale_id = %s
+                ORDER BY sl.id ASC
+            """, (int(company_id), sale_id)) or []
+
+            payments = self.fetch_all(f"""
+                SELECT payment_method, amount, payment_reference
+                FROM {schema}.pos_payments
+                WHERE company_id = %s AND sale_id = %s
+                ORDER BY id ASC
+            """, (int(company_id), sale_id)) or []
+
+            # Determine primary payment method or split
+            methods = [p.get("payment_method") or "cash" for p in payments]
+            method_str = "/".join(set(methods)) if methods else (sale.get("sale_type") or "cash")
+            
+            sale_gross = float(sale.get("gross_amount") or 0.0)
+            grand_total += sale_gross
+
+            if payments:
+                for p in payments:
+                    pm = (p.get("payment_method") or "").lower()
+                    pa = float(p.get("amount") or 0.0)
+                    if "cash" in pm:
+                        cash_total += pa
+                    elif any(c in pm for c in ["card", "credit", "debit"]):
+                        card_total += pa
+                    else:
+                        other_total += pa
+            else:
+                st = (sale.get("sale_type") or "").lower()
+                if "cash" in st:
+                    cash_total += sale_gross
+                elif "card" in st:
+                    card_total += sale_gross
+                else:
+                    other_total += sale_gross
+
+            invoices.append({
+                "sale_id": sale_id,
+                "invoice_number": sale.get("sale_no") or f"INV-{sale_id:06d}",
+                "customer_name": sale.get("customer_name") or sale.get("customer_full_name") or "Walk-in Customer",
+                "customer_phone": sale.get("customer_phone") or "",
+                "sale_date": sale.get("sale_date"),
+                "business_date": sale.get("business_date"),
+                "status": sale.get("status"),
+                "sale_type": sale.get("sale_type"),
+                "subtotal": float(sale.get("subtotal") or 0.0),
+                "vat_amount": float(sale.get("vat_amount") or 0.0),
+                "total_amount": sale_gross,
+                "payment_method": method_str.upper(),
+                "lines": [
+                    {
+                        "name": l.get("item_name"),
+                        "description": l.get("item_desc"),
+                        "qty": float(l.get("qty") or 1),
+                        "unit_price": float(l.get("unit_price") or 0.0),
+                        "amount": float(l.get("gross_amount") or 0.0),
+                    }
+                    for l in lines
+                ],
+            })
+
+        expected_cash = float(shift.get("expected_cash") or 0.0)
+        counted_cash = float(shift.get("counted_cash") or 0.0) if shift.get("counted_cash") is not None else expected_cash
+        reconciliation_diff = counted_cash - expected_cash
+
+        ref_no = f"CU-{shift_id:06d}"
+
+        return {
+            "shift_id": shift_id,
+            "report_reference": ref_no,
+            "cashier_name": shift.get("cashier_name") or f"Cashier #{shift.get('cashier_user_id')}",
+            "terminal_name": shift.get("terminal_name") or shift.get("terminal_code") or f"Terminal #{shift.get('terminal_id')}",
+            "shift_status": shift.get("status"),
+            "opened_at": shift.get("opened_at"),
+            "closed_at": shift.get("closed_at"),
+            "business_date": shift.get("closed_at") or shift.get("opened_at"),
+            "opening_float": float(shift.get("opening_float") or 0.0),
+            "invoice_count": len(invoices),
+            "invoices": invoices,
+            "session_summary": {
+                "invoice_count": len(invoices),
+                "total_sales": grand_total,
+                "cash_sales": cash_total,
+                "card_sales": card_total,
+                "other_sales": other_total,
+                "grand_total": grand_total,
+                "opening_float": float(shift.get("opening_float") or 0.0),
+                "expected_cash": expected_cash,
+                "counted_cash": counted_cash,
+                "reconciliation_diff": reconciliation_diff,
+            }
+        }
+
+    def save_cashup_invoice_report(self, company_id: int, shift_id: int, user_id: int = None) -> dict:
+        import json
+        self.ensure_cashup_report_tables(company_id)
+        schema = self.company_schema(company_id)
+        rep = self.get_cashup_session_invoices(company_id, shift_id)
+
+        # Check existing report
+        existing = self.fetch_one(f"""
+            SELECT id, print_count FROM {schema}.cashup_invoice_reports
+            WHERE company_id = %s AND shift_id = %s
+            ORDER BY created_at DESC LIMIT 1
+        """, (int(company_id), int(shift_id)))
+
+        if existing:
+            rep_id = existing["id"]
+            new_count = int(existing.get("print_count") or 0) + 1
+            self.fetch_one(f"""
+                UPDATE {schema}.cashup_invoice_reports
+                SET print_count = %s, last_printed_at = NOW()
+                WHERE id = %s
+                RETURNING id
+            """, (new_count, rep_id))
+            rep["report_id"] = rep_id
+            rep["print_count"] = new_count
+            return rep
+
+        summary = rep["session_summary"]
+        ref_no = rep["report_reference"]
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"""
+                INSERT INTO {schema}.cashup_invoice_reports (
+                    company_id, shift_id, report_reference, cashier_name,
+                    shift_title, business_date, generated_by,
+                    invoice_count, total_invoice_value, cash_sales, card_sales,
+                    other_sales, grand_total, cashup_expected, cashup_counted,
+                    reconciliation_diff, print_count, last_printed_at, metadata
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, CURRENT_DATE, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, NOW(), %s::jsonb
+                )
+                RETURNING id;
+            """, (
+                int(company_id),
+                int(shift_id),
+                ref_no,
+                rep["cashier_name"],
+                rep["terminal_name"],
+                user_id,
+                rep["invoice_count"],
+                summary["total_sales"],
+                summary["cash_sales"],
+                summary["card_sales"],
+                summary["other_sales"],
+                summary["grand_total"],
+                summary["expected_cash"],
+                summary["counted_cash"],
+                summary["reconciliation_diff"],
+                json.dumps(rep),
+            ))
+            rep_row = cur.fetchone()
+            rep_id = rep_row[0] if isinstance(rep_row, tuple) else rep_row["id"]
+
+            # Insert items
+            for inv in rep["invoices"]:
+                cur.execute(f"""
+                    INSERT INTO {schema}.cashup_invoice_report_items (
+                        company_id, report_id, sale_id, invoice_number,
+                        customer_name, sale_type, payment_method,
+                        total_amount, items_summary
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                """, (
+                    int(company_id),
+                    int(rep_id),
+                    int(inv["sale_id"]),
+                    inv["invoice_number"],
+                    inv["customer_name"],
+                    inv.get("sale_type"),
+                    inv.get("payment_method"),
+                    inv["total_amount"],
+                    json.dumps(inv.get("lines") or []),
+                ))
+
+        rep["report_id"] = rep_id
+        rep["print_count"] = 1
+        return rep
+
+
+    # ==========================================
     # LIVE BANK FEEDS & CUSTOMER BANKING
     # ==========================================
     def ensure_bank_feeds_table(self, company_id: int):

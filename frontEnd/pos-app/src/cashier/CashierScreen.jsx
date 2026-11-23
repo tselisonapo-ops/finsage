@@ -3,6 +3,7 @@ import { getCompanyContext, getPosMode, companyUsesInventory, getCurrency } from
 import { posApi } from "../services/posApi.js";
 import { OrderScreen } from "./OrderScreen.jsx";
 import { renderSlip, printHtml } from "../utils/receiptTemplates.js";
+import { printCashupReport } from "../printing/CashupInvoiceReportPrinter.js";
 import {
   saveOfflineSale,
   getPendingOfflineSales,
@@ -86,6 +87,19 @@ export function CashierPage() {
   const [emailSending, setEmailSending] = useState(false);
   const [emailStatus, setEmailStatus] = useState("");
 
+  // Enhanced Invoice Sharing & WhatsApp State
+  const [whatsappSending, setWhatsappSending] = useState(false);
+  const [whatsappStatus, setWhatsappStatus] = useState("");
+  const [shareLoading, setShareLoading] = useState(false);
+  const [dispatchNotice, setDispatchNotice] = useState(null);
+
+  // Cash-up and Consolidated Invoice Report State
+  const [showCashupModal, setShowCashupModal] = useState(false);
+  const [cashupLoading, setCashupLoading] = useState(false);
+  const [cashupReport, setCashupReport] = useState(null);
+  const [countedCashInput, setCountedCashInput] = useState("");
+  const [cashupSaved, setCashupSaved] = useState(false);
+
   useEffect(() => {
     if (selectedCustomer) {
       if (selectedCustomer.phone) setCustomerWhatsapp(selectedCustomer.phone);
@@ -156,6 +170,186 @@ Thank you for your business!`;
     } finally {
       setEmailSending(false);
     }
+  }
+
+  // ------------------------------------------------------------------
+  // INVOICE SHARING ACTIONS (View, Print, Download, Share, WhatsApp)
+  // ------------------------------------------------------------------
+  function handleViewInvoice(saleId) {
+    if (!saleId) return;
+    const url = posApi.getInvoicePdfUrl(saleId, false);
+    window.open(url, "_blank");
+  }
+
+  function handlePrintInvoice(saleId) {
+    if (!saleId) return;
+    const url = posApi.getInvoicePdfUrl(saleId, false);
+    const printWin = window.open(url, "_blank");
+    if (printWin) {
+      printWin.focus();
+      setTimeout(() => {
+        try {
+          printWin.print();
+        } catch (_) {}
+      }, 600);
+    }
+  }
+
+  function handleDownloadPdf(saleId, saleNo) {
+    if (!saleId) return;
+    const filename = `${saleNo || "INV-" + saleId}.pdf`;
+    const downloadUrl = posApi.getInvoicePdfUrl(saleId, true);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setDispatchNotice({
+      type: "success",
+      title: "Saved to Windows Downloads Folder",
+      text: `Invoice saved as ${filename}. Press Ctrl+J in your browser if you need to open its folder.`,
+    });
+  }
+
+  async function handleShareInvoice(saleId, saleNo) {
+    if (!saleId) return;
+    const filename = `${saleNo || "INV-" + saleId}.pdf`;
+    const pdfUrl = posApi.getInvoicePdfUrl(saleId, false);
+    setShareLoading(true);
+    try {
+      const resp = await fetch(pdfUrl);
+      const blob = await resp.blob();
+      const file = new File([blob], filename, { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `Sales Invoice #${saleNo}`,
+          text: `Sales Invoice #${saleNo} from ${company?.name || "FinSage Store"}`,
+        });
+        setDispatchNotice({ type: "success", title: "Shared", text: "Invoice shared successfully." });
+      } else {
+        handleDownloadPdf(saleId, saleNo);
+        setDispatchNotice({
+          type: "info",
+          title: "Native File Sharing Unavailable",
+          text: `Native sharing is not supported by your current browser. Downloaded ${filename} instead.`,
+        });
+      }
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        handleDownloadPdf(saleId, saleNo);
+      }
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
+  async function handleSendWhatsApp(saleInfo) {
+    if (!saleInfo) return;
+    let targetPhone = saleInfo.whatsapp;
+    if (!targetPhone) {
+      targetPhone = prompt("Enter customer WhatsApp number (e.g. 082 123 4567 or 266 58...):", "");
+      if (!targetPhone) return;
+    }
+
+    setWhatsappSending(true);
+    setWhatsappStatus("Sending invoice via WhatsApp...");
+    try {
+      const res = await posApi.sendWhatsappInvoice(saleInfo.saleId, {
+        recipient_phone: targetPhone,
+      });
+
+      if (res.method === "cloud_api" && res.status === "sent") {
+        setWhatsappStatus(`✅ PDF sent directly to customer WhatsApp via Cloud API! (Msg ID: ${res.message_id || "OK"})`);
+      } else {
+        // Mode A Web/Desktop:
+        // 1. Download PDF to Downloads
+        const filename = res.pdf_filename || `${saleInfo.saleNo}.pdf`;
+        const downloadUrl = res.download_url || posApi.getInvoicePdfUrl(saleInfo.saleId, true);
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        // 2. Open WhatsApp Web with dynamic message
+        if (res.wa_url) {
+          window.open(res.wa_url, "_blank", "noopener,noreferrer");
+        }
+
+        setWhatsappStatus(`📁 Invoice PDF downloaded as ${filename}. WhatsApp opened with prepared invoice message.`);
+      }
+    } catch (err) {
+      setWhatsappStatus(`❌ Failed to send WhatsApp invoice: ${err?.message || "Error"}`);
+    } finally {
+      setWhatsappSending(false);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // CONSOLIDATED CASH-UP REPORTING FLOW
+  // ------------------------------------------------------------------
+  async function openCashupFlow() {
+    setShowCashupModal(true);
+    setCashupReport(null);
+    setCashupSaved(false);
+    setCashupLoading(true);
+
+    try {
+      let currentShiftId = activeShift?.id;
+      if (!currentShiftId) {
+        const shiftsRes = await posApi.listShifts("open");
+        const openShifts = shiftsRes.shifts || [];
+        if (openShifts.length > 0) {
+          currentShiftId = openShifts[0].id;
+        } else {
+          const allRes = await posApi.listShifts("");
+          const allShifts = allRes.shifts || [];
+          if (allShifts.length > 0) {
+            currentShiftId = allShifts[0].id;
+          }
+        }
+      }
+
+      if (!currentShiftId) {
+        setMessage("No active or historical shift found to run cash-up report.");
+        setShowCashupModal(false);
+        return;
+      }
+
+      const repRes = await posApi.getCashupInvoiceReport(currentShiftId);
+      setCashupReport(repRes.report);
+      setCountedCashInput(String(repRes.report?.session_summary?.expected_cash || ""));
+    } catch (err) {
+      setMessage(err.message || "Failed to load cash-up report data.");
+    } finally {
+      setCashupLoading(false);
+    }
+  }
+
+  async function handleCloseShiftAndAuditCashup() {
+    if (!cashupReport?.shift_id) return;
+    setCashupLoading(true);
+    try {
+      const counted = Number(countedCashInput || 0);
+      await posApi.closeShift(cashupReport.shift_id, { counted_cash: counted });
+      await posApi.saveCashupInvoiceReport(cashupReport.shift_id);
+      setCashupSaved(true);
+      setMessage("Cash-up session submitted and consolidated invoice report audited.");
+      const updated = await posApi.getCashupInvoiceReport(cashupReport.shift_id);
+      setCashupReport(updated.report);
+    } catch (err) {
+      alert(err.message || "Failed to submit cash-up.");
+    } finally {
+      setCashupLoading(false);
+    }
+  }
+
+  function handlePrintCashupReport(format = "roll") {
+    if (!cashupReport) return;
+    printCashupReport({ report: cashupReport, company, format });
   }
 
   // ============================================================
@@ -1066,7 +1260,7 @@ Thank you for your business!`;
   }
 
   return (
-    <main className="pos-page">
+    <main className={`pos-page${showNumpad ? " is-payment-workspace" : ""}`}>
       <header
         className={commandBarClass}
         onMouseEnter={() => {
@@ -1165,6 +1359,16 @@ Thank you for your business!`;
               </button>
             )}
 
+            <button
+              type="button"
+              className="pos-cashup-header-btn"
+              onClick={openCashupFlow}
+              title="Generate consolidated sales invoice report for cashier cash-up session"
+              style={{ background: "#065f46", color: "#ffffff", fontWeight: "700" }}
+            >
+              💵 Cash-up & Invoices Roll
+            </button>
+
             {isFsUser && (
               <>
                 <a href="#/manager">Manager Workspace</a>
@@ -1255,7 +1459,7 @@ Thank you for your business!`;
       )}
 
       {canAccessPos && (
-        <section className="pos-grid">
+        <section className={`pos-grid${showNumpad ? " is-payment-workspace-grid" : ""}`}>
           <aside className="left-panel">
             {isRestaurantLike && (
               <div className="quick-actions">
@@ -1838,88 +2042,88 @@ Thank you for your business!`;
                 </div>
               </div>
 
-              {/* On-Screen NUMPAD + Quick Cash Chips */}
+              {/* Payment Workspace: Numpad + Quick Tender + Customer Delivery */}
               <div className="pos-numpad-container">
                 <div className="pos-numpad-header">
                   <span>Numeric Keypad (Touch / POS)</span>
+
                   <button
                     type="button"
                     className="pos-numpad-toggle-btn"
-                    onClick={() => setShowNumpad(!showNumpad)}
+                    onClick={() => setShowNumpad((prev) => !prev)}
                   >
                     {showNumpad ? "Hide Numpad" : "Show Numpad"}
                   </button>
                 </div>
 
-                <div className="pos-quick-tender-chips">
-                  <button
-                    type="button"
-                    className="pos-chip-btn exact"
-                    onClick={() => handleNumpadKey("exact")}
-                  >
-                    Exact
-                  </button>
-                  <button
-                    type="button"
-                    className="pos-chip-btn"
-                    onClick={() => handleNumpadKey("+10")}
-                  >
-                    +10
-                  </button>
-                  <button
-                    type="button"
-                    className="pos-chip-btn"
-                    onClick={() => handleNumpadKey("+20")}
-                  >
-                    +20
-                  </button>
-                  <button
-                    type="button"
-                    className="pos-chip-btn"
-                    onClick={() => handleNumpadKey("+50")}
-                  >
-                    +50
-                  </button>
-                  <button
-                    type="button"
-                    className="pos-chip-btn"
-                    onClick={() => handleNumpadKey("+100")}
-                  >
-                    +100
-                  </button>
-                  <button
-                    type="button"
-                    className="pos-chip-btn"
-                    onClick={() => handleNumpadKey("+200")}
-                  >
-                    +200
-                  </button>
-                </div>
-
                 {showNumpad && (
-                  <div className="pos-numpad-grid">
-                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("7")}>7</button>
-                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("8")}>8</button>
-                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("9")}>9</button>
+                  <>
+                    <div className="pos-quick-tender-chips">
+                      <button
+                        type="button"
+                        className="pos-chip-btn exact"
+                        onClick={() => handleNumpadKey("exact")}
+                      >
+                        Exact
+                      </button>
 
-                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("4")}>4</button>
-                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("5")}>5</button>
-                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("6")}>6</button>
+                      <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+10")}>+10</button>
+                      <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+20")}>+20</button>
+                      <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+50")}>+50</button>
+                      <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+100")}>+100</button>
+                      <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+200")}>+200</button>
+                    </div>
 
-                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("1")}>1</button>
-                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("2")}>2</button>
-                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("3")}>3</button>
+                    <div className="pos-numpad-grid">
+                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("7")}>7</button>
+                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("8")}>8</button>
+                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("9")}>9</button>
 
-                    <button type="button" className="pos-num-btn danger" onClick={() => handleNumpadKey("C")}>C</button>
-                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("0")}>0</button>
-                    <button type="button" className="pos-num-btn accent" onClick={() => handleNumpadKey("⌫")}>⌫</button>
+                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("4")}>4</button>
+                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("5")}>5</button>
+                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("6")}>6</button>
 
-                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("00")}>00</button>
-                    <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey(".")}>.</button>
-                    <button type="button" className="pos-num-btn accent" onClick={() => handleNumpadKey("exact")}>Exact</button>
-                  </div>
+                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("1")}>1</button>
+                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("2")}>2</button>
+                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("3")}>3</button>
+
+                      <button type="button" className="pos-num-btn danger" onClick={() => handleNumpadKey("C")}>C</button>
+                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("0")}>0</button>
+                      <button type="button" className="pos-num-btn accent" onClick={() => handleNumpadKey("⌫")}>⌫</button>
+
+                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("00")}>00</button>
+                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey(".")}>.</button>
+                      <button type="button" className="pos-num-btn accent" onClick={() => handleNumpadKey("exact")}>Exact</button>
+                    </div>
+                  </>
                 )}
               </div>
+
+              {showNumpad && (
+                <div className="pos-digital-delivery-card">
+                  <h4>📱 Send Customer Invoice / Receipt</h4>
+
+                  <div className="pos-delivery-input-row">
+                    <label>Customer WhatsApp Number</label>
+                    <input
+                      type="tel"
+                      placeholder="e.g. 082 123 4567 or +27..."
+                      value={customerWhatsapp}
+                      onChange={(e) => setCustomerWhatsapp(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="pos-delivery-input-row">
+                    <label>Customer Email Address</label>
+                    <input
+                      type="email"
+                      placeholder="customer@example.com"
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Digital Invoice / Receipt Delivery (WhatsApp & Email) */}
               <div className="pos-digital-delivery-card">
@@ -2256,40 +2460,91 @@ Thank you for your business!`;
             )}
 
             <div className="pos-complete-actions">
-              {completedSaleModal.whatsapp ? (
-                <a
-                  href={getWhatsappUrl(completedSaleModal)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="pos-action-btn whatsapp"
-                >
-                  💬 Open WhatsApp Invoice (wa.me)
-                </a>
-              ) : (
-                <div style={{ fontSize: "0.8rem", color: "#64748b" }}>
-                  (No WhatsApp number was entered for this sale)
+              {dispatchNotice && (
+                <div className={`pos-notice-box ${dispatchNotice.type || 'info'}`}>
+                  {dispatchNotice.title && <strong>{dispatchNotice.title}</strong>}
+                  <div>{dispatchNotice.text}</div>
                 </div>
               )}
 
-              {completedSaleModal.email ? (
+              {whatsappStatus && (
+                <div style={{ marginBottom: 8, fontSize: "0.85rem", color: whatsappStatus.includes("✅") ? "#16a34a" : whatsappStatus.includes("❌") ? "#dc2626" : "#0284c7" }}>
+                  {whatsappStatus}
+                </div>
+              )}
+
+              {emailStatus && (
+                <div style={{ marginBottom: 8, fontSize: "0.85rem", color: emailStatus.includes("✅") ? "#16a34a" : "#dc2626" }}>
+                  {emailStatus}
+                </div>
+              )}
+
+              {/* 6 Actions for Completed Sale Invoice */}
+              <div className="pos-action-grid">
+                <button
+                  type="button"
+                  className="pos-action-btn view"
+                  onClick={() => handleViewInvoice(completedSaleModal.saleId)}
+                  title="Display the completed official sales invoice PDF"
+                >
+                  👁️ View Invoice
+                </button>
+
+                <button
+                  type="button"
+                  className="pos-action-btn print"
+                  onClick={() => handlePrintInvoice(completedSaleModal.saleId)}
+                  title="Print the individual sales invoice"
+                >
+                  📄 Print Invoice
+                </button>
+
+                <button
+                  type="button"
+                  className="pos-action-btn download"
+                  onClick={() => handleDownloadPdf(completedSaleModal.saleId, completedSaleModal.saleNo)}
+                  title="Save PDF to Windows Downloads folder (e.g. INV-000123.pdf)"
+                >
+                  📥 Download PDF
+                </button>
+
+                <button
+                  type="button"
+                  className="pos-action-btn share"
+                  disabled={shareLoading}
+                  onClick={() => handleShareInvoice(completedSaleModal.saleId, completedSaleModal.saleNo)}
+                  title="Open native file sharing where supported"
+                >
+                  📤 {shareLoading ? "Preparing..." : "Share Invoice"}
+                </button>
+
+                <button
+                  type="button"
+                  className="pos-action-btn whatsapp"
+                  disabled={whatsappSending}
+                  onClick={() => handleSendWhatsApp(completedSaleModal)}
+                  title="Send via Business WhatsApp number (Cloud API or Web)"
+                >
+                  💬 {whatsappSending ? "Sending..." : "Send via WhatsApp"}
+                </button>
+
                 <button
                   type="button"
                   className="pos-action-btn email"
                   disabled={emailSending}
-                  onClick={() => sendCompletedSaleEmail(completedSaleModal.email)}
+                  onClick={() => sendCompletedSaleEmail(completedSaleModal.email || prompt("Enter recipient email address:", ""))}
+                  title="Prepare or send email delivery"
                 >
-                  ✉️ {emailSending ? "Sending..." : `Email PDF Receipt to ${completedSaleModal.email}`}
+                  ✉️ {emailSending ? "Sending..." : "Send via Email"}
                 </button>
-              ) : (
-                <div style={{ fontSize: "0.8rem", color: "#64748b" }}>
-                  (No Email address was entered for this sale)
-                </div>
-              )}
+              </div>
 
+              {/* Existing POS slip printing intact */}
               <button
                 type="button"
                 className="pos-action-btn print"
                 onClick={() => printReceipt(completedSaleModal.saleNo)}
+                title="Print thermal till slip / receipt"
               >
                 🖨️ Print Slip / Receipt
               </button>
@@ -2300,10 +2555,180 @@ Thank you for your business!`;
                 onClick={() => {
                   setCompletedSaleModal(null);
                   setEmailStatus("");
+                  setWhatsappStatus("");
+                  setDispatchNotice(null);
                   startNewSale();
                 }}
               >
                 ➕ Start Next Sale
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cash-up & Consolidated Sales Invoice Report Modal */}
+      {showCashupModal && (
+        <div className="pos-cashup-backdrop">
+          <div className="pos-cashup-modal">
+            <div className="pos-cashup-head">
+              <div>
+                <h3>SALES INVOICE ROLL</h3>
+                <div style={{ fontSize: "0.78rem", color: "#94a3b8" }}>
+                  {company?.name || "FinSphere Solutions"} • CASH-UP SUPPORTING DOCUMENT
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCashupModal(false)}
+                style={{ background: "transparent", border: "none", color: "#ffffff", fontSize: "1.4rem", cursor: "pointer" }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="pos-cashup-body">
+              {cashupLoading ? (
+                <div style={{ padding: "30px", textAlign: "center", color: "#64748b" }}>
+                  Loading session sales invoices and calculating reconciliation...
+                </div>
+              ) : !cashupReport ? (
+                <div style={{ padding: "20px", textAlign: "center", color: "#64748b" }}>
+                  No cash-up report data found for this session.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                  {cashupSaved && (
+                    <div className="pos-notice-box success">
+                      <strong>✅ Cash-up Submitted & Audited</strong>
+                      <div>The cash-up session has been closed and the supporting sales invoice roll recorded for audit.</div>
+                    </div>
+                  )}
+
+                  {/* Cash-up Session Metadata */}
+                  <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "10px 14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: "0.85rem" }}>
+                    <div><span style={{ color: "#64748b" }}>Cashier:</span> <strong>{cashupReport.cashier_name}</strong></div>
+                    <div><span style={{ color: "#64748b" }}>Cash-up Reference:</span> <strong>{cashupReport.report_reference}</strong></div>
+                    <div><span style={{ color: "#64748b" }}>Business Date:</span> <strong>{cashupReport.business_date ? new Date(cashupReport.business_date).toLocaleDateString() : new Date().toLocaleDateString()}</strong></div>
+                    <div><span style={{ color: "#64748b" }}>Terminal / Shift:</span> <strong>{cashupReport.terminal_name} (Shift #{cashupReport.shift_id})</strong></div>
+                  </div>
+
+                  {/* Summary & Reconciliation Card */}
+                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "12px 14px" }}>
+                    <h4 style={{ margin: "0 0 8px 0", fontSize: "0.9rem", color: "#166534" }}>Session Summary</h4>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "10px", textAlign: "center" }}>
+                      <div style={{ background: "#ffffff", padding: "8px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>Invoices</div>
+                        <div style={{ fontSize: "1.1rem", fontWeight: "700" }}>{cashupReport.session_summary?.invoice_count || 0}</div>
+                      </div>
+                      <div style={{ background: "#ffffff", padding: "8px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>Cash Sales</div>
+                        <div style={{ fontSize: "1.1rem", fontWeight: "700", color: "#15803d" }}>{money(cashupReport.session_summary?.cash_sales || 0)}</div>
+                      </div>
+                      <div style={{ background: "#ffffff", padding: "8px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>Card Sales</div>
+                        <div style={{ fontSize: "1.1rem", fontWeight: "700", color: "#0369a1" }}>{money(cashupReport.session_summary?.card_sales || 0)}</div>
+                      </div>
+                      <div style={{ background: "#ffffff", padding: "8px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>Grand Total</div>
+                        <div style={{ fontSize: "1.1rem", fontWeight: "800", color: "#0f172a" }}>{money(cashupReport.session_summary?.grand_total || 0)}</div>
+                      </div>
+                    </div>
+
+                    {/* Cash Drawer Reconciliation Input */}
+                    <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px dashed #cbd5e1", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+                      <div style={{ fontSize: "0.85rem" }}>
+                        <span>Expected Cash: <strong>{money(cashupReport.session_summary?.expected_cash || 0)}</strong></span>
+                        {countedCashInput && (
+                          <span style={{ marginLeft: "12px", fontWeight: "700", color: (Number(countedCashInput) - Number(cashupReport.session_summary?.expected_cash || 0)) === 0 ? "#16a34a" : "#dc2626" }}>
+                            Variance: {money(Number(countedCashInput) - Number(cashupReport.session_summary?.expected_cash || 0))}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <label style={{ fontSize: "0.8rem", fontWeight: "600" }}>Counted Cash:</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={countedCashInput}
+                          onChange={(e) => setCountedCashInput(e.target.value)}
+                          placeholder="Counted cash"
+                          style={{ width: "110px", padding: "5px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "0.85rem" }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Invoices List Preview */}
+                  <div>
+                    <h4 style={{ margin: "4px 0 8px 0", fontSize: "0.88rem", textTransform: "uppercase", color: "#475569" }}>
+                      Supporting Sales Invoices ({cashupReport.invoices?.length || 0})
+                    </h4>
+                    <div style={{ maxHeight: "240px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "6px" }}>
+                      {cashupReport.invoices?.length === 0 ? (
+                        <div style={{ padding: "12px", textAlign: "center", color: "#94a3b8", fontSize: "0.85rem" }}>No completed invoices in this shift.</div>
+                      ) : (
+                        cashupReport.invoices.map((inv, i) => (
+                          <div key={inv.sale_id} style={{ padding: "6px 10px", borderBottom: i < cashupReport.invoices.length - 1 ? "1px solid #f1f5f9" : "none", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.83rem" }}>
+                            <div>
+                              <strong>#{i + 1} — {inv.invoice_number}</strong>
+                              <span style={{ marginLeft: "8px", fontSize: "0.75rem", padding: "2px 6px", borderRadius: "4px", background: "#e2e8f0", color: "#334155" }}>
+                                {inv.payment_method}
+                              </span>
+                              <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "1px" }}>
+                                {inv.customer_name} • {(inv.lines || []).map(l => `${l.name} x${l.qty}`).join(", ")}
+                              </div>
+                            </div>
+                            <strong style={{ fontSize: "0.9rem" }}>{money(inv.total_amount)}</strong>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="pos-cashup-foot">
+              <button
+                type="button"
+                className="pos-action-btn print"
+                onClick={() => handlePrintCashupReport("roll")}
+                disabled={!cashupReport || cashupLoading}
+                title="Continuous thermal receipt roll print (80mm)"
+              >
+                🖨️ Print Continuous Roll (80mm)
+              </button>
+
+              <button
+                type="button"
+                className="pos-action-btn print"
+                onClick={() => handlePrintCashupReport("a4")}
+                disabled={!cashupReport || cashupLoading}
+                title="Formal standard A4 supporting document print"
+              >
+                📄 Print A4 Report
+              </button>
+
+              {cashupReport?.shift_status === "open" && !cashupSaved && (
+                <button
+                  type="button"
+                  className="pos-action-btn"
+                  onClick={handleCloseShiftAndAuditCashup}
+                  disabled={cashupLoading}
+                  style={{ background: "#059669", color: "#ffffff" }}
+                >
+                  💾 Submit Cash-up & Audit
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="pos-action-btn soft"
+                onClick={() => setShowCashupModal(false)}
+                style={{ background: "#f1f5f9", color: "#334155" }}
+              >
+                Close
               </button>
             </div>
           </div>

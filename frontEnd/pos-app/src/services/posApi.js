@@ -445,9 +445,52 @@ export const posApi = {
     },
 
     syncOfflineSale(payload) {
-    return apiFetch(`/api/companies/${companyId()}/pos/offline-sync`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-    });
+        return postJson(`${base()}/offline-sync`, payload);
+    },
+
+    // -------------------------------------------------------------
+    // BUSINESS WHATSAPP INTEGRATION & PDF SHARING
+    // -------------------------------------------------------------
+    getWhatsappSettings() {
+        const cid = getCompanyId();
+        return getJson(`/api/companies/${cid}/integrations/whatsapp`);
+    },
+
+    saveWhatsappSettings(payload) {
+        const cid = getCompanyId();
+        return postJson(`/api/companies/${cid}/integrations/whatsapp`, payload);
+    },
+
+    testWhatsappConnection() {
+        const cid = getCompanyId();
+        return postJson(`/api/companies/${cid}/integrations/whatsapp/test`, {});
+    },
+
+    getInvoicePdfUrl(saleId, download = false) {
+        const cid = getCompanyId();
+        return `/api/companies/${cid}/pos/sales/${saleId}/invoice-pdf${download ? "?download=1" : ""}`;
+    },
+
+    sendWhatsappInvoice(saleId, payload = {}) {
+        const cid = getCompanyId();
+        return postJson(`/api/companies/${cid}/pos/sales/${saleId}/send-whatsapp`, payload);
+    },
+
+    getWhatsappLogs(saleId) {
+        const cid = getCompanyId();
+        return getJson(`/api/companies/${cid}/pos/sales/${saleId}/whatsapp-logs`);
+    },
+
+    // -------------------------------------------------------------
+    // CONSOLIDATED CASH-UP SALES INVOICE REPORTING
+    // -------------------------------------------------------------
+    getCashupInvoiceReport(shiftId) {
+        const cid = getCompanyId();
+        return getJson(`/api/companies/${cid}/pos/shifts/${shiftId}/invoice-report`);
+    },
+
+    saveCashupInvoiceReport(shiftId) {
+        const cid = getCompanyId();
+        return postJson(`/api/companies/${cid}/pos/shifts/${shiftId}/invoice-report/save`, {});
     },
 };

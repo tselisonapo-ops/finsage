@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { posApi } from "../services/posApi.js";
 import { money } from "../utils/currency.js";
 import { renderSlip, SLIP_TEMPLATE_OPTIONS } from "../utils/receiptTemplates.js";
+import { printCashupReport } from "../printing/CashupInvoiceReportPrinter.js";
 
 const RETAIL_TABS = [
   ["overview", "Overview"],
@@ -208,6 +209,14 @@ export function ManagerPage() {
   const [modal, setModal] = useState(null);
   const [reportView, setReportView] = useState(null);
   const [settingsView, setSettingsView] = useState(null);
+  const [whatsappSettings, setWhatsappSettings] = useState(null);
+  const [cashupRollModal, setCashupRollModal] = useState({
+    open: false,
+    loading: false,
+    shiftId: null,
+    report: null,
+    error: null,
+  });
 
   const [ordersSummary, setOrdersSummary] = useState({});
   const [tableSections, setTableSections] = useState([]);
@@ -304,6 +313,7 @@ export function ManagerPage() {
       if (activeTab === "settings") {
         await Promise.allSettled([
           loadReceiptSettings(),
+          loadWhatsappSettings(),
           loadTableSections(),
           loadTables(),
         ]);
@@ -402,6 +412,67 @@ export function ManagerPage() {
     const res = await posApi.getReceiptSettings();
     console.log("LOAD RESPONSE", res);
     setReceiptSettings(res.receipt_settings || res.settings || res.data || res || {});
+  }
+
+  async function loadWhatsappSettings() {
+    try {
+      const res = await posApi.getWhatsappSettings();
+      if (res && res.settings) {
+        setWhatsappSettings(res.settings);
+      }
+    } catch (err) {
+      console.warn("Failed to load whatsapp settings:", err);
+    }
+  }
+
+  async function saveWhatsappSettings(payload) {
+    const res = await posApi.saveWhatsappSettings(payload);
+    if (res && res.settings) {
+      setWhatsappSettings(res.settings);
+    }
+    return res;
+  }
+
+  async function testWhatsappConnection(payload) {
+    return await posApi.testWhatsappConnection(payload);
+  }
+
+  async function openCashupRollModal(shiftId) {
+    setCashupRollModal({
+      open: true,
+      loading: true,
+      shiftId,
+      report: null,
+      error: null,
+    });
+    try {
+      const res = await posApi.getCashupInvoiceReport(shiftId);
+      if (res && res.report) {
+        setCashupRollModal({
+          open: true,
+          loading: false,
+          shiftId,
+          report: res.report,
+          error: null,
+        });
+      } else {
+        setCashupRollModal({
+          open: true,
+          loading: false,
+          shiftId,
+          report: null,
+          error: "No report found for shift #" + shiftId,
+        });
+      }
+    } catch (err) {
+      setCashupRollModal({
+        open: true,
+        loading: false,
+        shiftId,
+        report: null,
+        error: err?.message || "Failed to load cash-up report",
+      });
+    }
   }
 
   async function loadTableSections() {
@@ -1234,6 +1305,7 @@ export function ManagerPage() {
               onNewShiftPattern={openShiftPatternModal}
               onAssignStaff={openAssignStaffModal}
               onAddLeave={openLeaveModal}
+              onViewCashupRoll={openCashupRollModal}
             />
           )}
 
@@ -1449,7 +1521,26 @@ export function ManagerPage() {
                   </>
                 )}
 
+                <ManagerCard
+                  icon="💬"
+                  title="WhatsApp Business"
+                  value={whatsappSettings?.is_enabled ? "Enabled" : "Configure"}
+                  text="Dedicated company WhatsApp number, Meta Cloud API or Web/Desktop fallback, and automated invoice delivery."
+                  onClick={() => {
+                    loadWhatsappSettings();
+                    setSettingsView("whatsapp");
+                  }}
+                />
+
               </section>
+
+              {settingsView === "whatsapp" && (
+                <WhatsAppSettingsTab
+                  settings={whatsappSettings}
+                  onSave={saveWhatsappSettings}
+                  onTest={testWhatsappConnection}
+                />
+              )}
 
               {settingsView === "receipt" && (
                 <ReceiptSettingsTab
@@ -1936,6 +2027,20 @@ export function ManagerPage() {
           modal={modal}
           onClose={() => setModal(null)}
           onSubmit={handleModalSubmit}
+        />
+      )}
+      {cashupRollModal.open && (
+        <CashupRollModal
+          modalState={cashupRollModal}
+          onClose={() =>
+            setCashupRollModal({
+              open: false,
+              loading: false,
+              shiftId: null,
+              report: null,
+              error: null,
+            })
+          }
         />
       )}
     </main>
@@ -2752,6 +2857,7 @@ function RestaurantSettingsModalTab({
     onNewShiftPattern,
     onAssignStaff,
     onAddLeave,
+    onViewCashupRoll,
   }) {
   const employeeName = (employeeUserId) => {
     const staff = staffMembers.find(
@@ -2931,8 +3037,16 @@ function RestaurantSettingsModalTab({
                   <small>Cashier: {s.cashier_user_id || "-"} • Status: {s.status}</small>
                 </div>
 
-                <div>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                   <strong>{money(s.expected_cash || 0)}</strong>
+                  <button
+                    type="button"
+                    className="soft"
+                    title="View and print cash-up sales invoice roll"
+                    onClick={() => onViewCashupRoll && onViewCashupRoll(s.id)}
+                  >
+                    📄 Cash-up Roll
+                  </button>
                   {s.status === "open" && (
                     <button onClick={() => onCloseShift(s.id)}>Close</button>
                   )}
@@ -5067,6 +5181,669 @@ function CustomerDisplaySettingsTab() {
         <ManagerCard icon="🧾" title="Show VAT" value="Enabled" text="Display VAT breakdown to customers." />
         <ManagerCard icon="💳" title="Payment Prompt" value="Enabled" text="Show payment amount due at checkout." />
       </section>
+    </section>
+  );
+}
+
+function CashupRollModal({ modalState, onClose }) {
+  const { open, loading, shiftId, report, error } = modalState;
+  const [savingReport, setSavingReport] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState(null);
+
+  if (!open) return null;
+
+  async function handleArchive() {
+    setSavingReport(true);
+    setSaveFeedback(null);
+    try {
+      const res = await posApi.saveCashupInvoiceReport(shiftId);
+      setSaveFeedback({
+        ok: true,
+        msg: "Cash-up roll snapshot archived successfully (ID #" + (res?.report_id || "") + ").",
+      });
+    } catch (err) {
+      setSaveFeedback({
+        ok: false,
+        msg: err?.message || "Failed to archive snapshot.",
+      });
+    } finally {
+      setSavingReport(false);
+    }
+  }
+
+  const shift = report?.shift || {};
+  const invoices = report?.invoices || [];
+  const pm = report?.payment_methods || {};
+  const rec = report?.reconciliation || {};
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal-card"
+        style={{
+          maxWidth: 860,
+          width: "95vw",
+          maxHeight: "90vh",
+          display: "flex",
+          flexDirection: "column",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-head">
+          <div>
+            <h2 style={{ margin: 0 }}>📄 Cash-up Sales Invoice Roll — Shift #{shiftId}</h2>
+            <small style={{ color: "var(--text-muted, #64748b)" }}>
+              Cashier: {shift.cashier_name || "Teller"} • Terminal: {shift.terminal_name || "Main"} • Date: {shift.business_date || "-"}
+            </small>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ fontSize: 20, cursor: "pointer", background: "none", border: "none" }}
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="modal-body" style={{ overflowY: "auto", flex: 1, padding: "16px 20px" }}>
+          {loading && (
+            <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted, #64748b)" }}>
+              <p>Loading cash-up invoices roll...</p>
+            </div>
+          )}
+
+          {error && !loading && (
+            <div
+              className="pos-notice-box"
+              style={{
+                background: "#fee2e2",
+                borderLeft: "4px solid #ef4444",
+                color: "#991b1b",
+                padding: 12,
+                borderRadius: 6,
+                marginBottom: 16,
+              }}
+            >
+              <strong>Error:</strong> {error}
+            </div>
+          )}
+
+          {saveFeedback && (
+            <div
+              className="pos-notice-box"
+              style={{
+                background: saveFeedback.ok ? "#dcfce7" : "#fee2e2",
+                borderLeft: `4px solid ${saveFeedback.ok ? "#16a34a" : "#ef4444"}`,
+                color: saveFeedback.ok ? "#166534" : "#991b1b",
+                padding: 10,
+                borderRadius: 6,
+                marginBottom: 14,
+              }}
+            >
+              {saveFeedback.msg}
+            </div>
+          )}
+
+          {!loading && report && (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                  gap: 10,
+                  marginBottom: 16,
+                }}
+              >
+                <div
+                  style={{
+                    background: "var(--surface-sunken, #f8fafc)",
+                    padding: 10,
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color, #e2e8f0)",
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: "var(--text-muted, #64748b)", textTransform: "uppercase" }}>
+                    Invoices Count
+                  </div>
+                  <strong style={{ fontSize: 18, color: "var(--text-color, #0f172a)" }}>
+                    {report.invoices_count || invoices.length}
+                  </strong>
+                </div>
+                <div
+                  style={{
+                    background: "var(--surface-sunken, #f8fafc)",
+                    padding: 10,
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color, #e2e8f0)",
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: "var(--text-muted, #64748b)", textTransform: "uppercase" }}>
+                    Total Invoiced
+                  </div>
+                  <strong style={{ fontSize: 18, color: "#0284c7" }}>
+                    {money(report.total_sales || 0)}
+                  </strong>
+                </div>
+                <div
+                  style={{
+                    background: "var(--surface-sunken, #f8fafc)",
+                    padding: 10,
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color, #e2e8f0)",
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: "var(--text-muted, #64748b)", textTransform: "uppercase" }}>
+                    Expected Cash
+                  </div>
+                  <strong style={{ fontSize: 18, color: "var(--text-color, #0f172a)" }}>
+                    {money(rec.expected_cash || 0)}
+                  </strong>
+                </div>
+                <div
+                  style={{
+                    background: "var(--surface-sunken, #f8fafc)",
+                    padding: 10,
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color, #e2e8f0)",
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: "var(--text-muted, #64748b)", textTransform: "uppercase" }}>
+                    Counted Cash
+                  </div>
+                  <strong style={{ fontSize: 18, color: "var(--text-color, #0f172a)" }}>
+                    {money(rec.actual_cash || 0)}
+                  </strong>
+                </div>
+                <div
+                  style={{
+                    background: "var(--surface-sunken, #f8fafc)",
+                    padding: 10,
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color, #e2e8f0)",
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: "var(--text-muted, #64748b)", textTransform: "uppercase" }}>
+                    Cash Variance
+                  </div>
+                  <strong
+                    style={{
+                      fontSize: 18,
+                      color:
+                        Number(rec.cash_variance || 0) < 0
+                          ? "#dc2626"
+                          : Number(rec.cash_variance || 0) > 0
+                          ? "#16a34a"
+                          : "var(--text-color, #0f172a)",
+                    }}
+                  >
+                    {money(rec.cash_variance || 0)}
+                  </strong>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <h4
+                  style={{
+                    margin: "0 0 6px 0",
+                    fontSize: 12,
+                    textTransform: "uppercase",
+                    color: "var(--text-muted, #64748b)",
+                  }}
+                >
+                  Payments Tendered
+                </h4>
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13 }}>
+                  <span>💵 Cash: <strong>{money(pm.cash || 0)}</strong></span>
+                  <span>💳 Card: <strong>{money(pm.card || 0)}</strong></span>
+                  <span>📱 Mobile: <strong>{money(pm.mobile || 0)}</strong></span>
+                  <span>📑 Account: <strong>{money(pm.account || 0)}</strong></span>
+                </div>
+              </div>
+
+              <h4
+                style={{
+                  margin: "16px 0 8px 0",
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  color: "var(--text-muted, #64748b)",
+                }}
+              >
+                Session Sales Invoices
+              </h4>
+              <div className="report-table-wrap" style={{ maxHeight: 280, overflowY: "auto" }}>
+                <table className="report-table" style={{ width: "100%", fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th>Invoice #</th>
+                      <th>Time</th>
+                      <th>Customer</th>
+                      <th style={{ textAlign: "center" }}>Items</th>
+                      <th>Payment</th>
+                      <th style={{ textAlign: "right" }}>Total</th>
+                      <th style={{ textAlign: "center" }}>WhatsApp</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoices.length ? (
+                      invoices.map((inv) => (
+                        <tr key={inv.id}>
+                          <td><strong>{inv.invoice_number || `INV-${inv.id}`}</strong></td>
+                          <td>
+                            {inv.created_at
+                              ? new Date(inv.created_at).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : "-"}
+                          </td>
+                          <td>{inv.customer_name || "Cash Customer"}</td>
+                          <td style={{ textAlign: "center" }}>{(inv.lines || []).length}</td>
+                          <td>
+                            <span className="badge" style={{ textTransform: "capitalize", fontSize: 11 }}>
+                              {inv.payment_method || "cash"}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: "right" }}>
+                            <strong>{money(inv.total_amount || 0)}</strong>
+                          </td>
+                          <td style={{ textAlign: "center" }}>
+                            {inv.whatsapp_status ? (
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  padding: "2px 6px",
+                                  borderRadius: 4,
+                                  background:
+                                    inv.whatsapp_status === "delivered" || inv.whatsapp_status === "sent"
+                                      ? "#dcfce7"
+                                      : "#fee2e2",
+                                  color:
+                                    inv.whatsapp_status === "delivered" || inv.whatsapp_status === "sent"
+                                      ? "#166534"
+                                      : "#991b1b",
+                                }}
+                              >
+                                {inv.whatsapp_status}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 11, color: "var(--text-muted, #94a3b8)" }}>-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan="7"
+                          style={{
+                            textAlign: "center",
+                            padding: 20,
+                            color: "var(--text-muted, #64748b)",
+                          }}
+                        >
+                          No sales recorded in this shift session.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div
+          className="modal-footer"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 10,
+            borderTop: "1px solid var(--border-color, #e2e8f0)",
+            padding: "12px 20px",
+          }}
+        >
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              className="soft"
+              disabled={!report || loading || savingReport}
+              onClick={handleArchive}
+              title="Archive a permanent snapshot of this cash-up supporting roll in the database"
+            >
+              {savingReport ? "Archiving..." : "💾 Archive Snapshot"}
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              className="soft"
+              disabled={!report || loading}
+              onClick={() => printCashupReport(report, { paperWidth: "80mm" })}
+              title="Print on continuous thermal receipt roll (80mm)"
+            >
+              🖨️ Print Roll (80mm)
+            </button>
+            <button
+              type="button"
+              className="scan-btn"
+              disabled={!report || loading}
+              onClick={() => printCashupReport(report, { paperWidth: "A4" })}
+              title="Print standard A4 summary report"
+            >
+              📄 Print A4 Report
+            </button>
+            <button type="button" className="soft" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WhatsAppSettingsTab({ settings, onSave, onTest }) {
+  const DEFAULTS = {
+    is_enabled: false,
+    business_phone_number: "",
+    integration_method: "web_desktop",
+    business_account_id: "",
+    phone_number_id: "",
+    access_token: "",
+    business_display_name: "",
+    default_message_template:
+      "Hello {customer_name},\n\nThank you for shopping with us at {company_name}! Please find your sales invoice {invoice_number} attached for the amount of {currency} {total_amount}.\n\nWe appreciate your business.",
+    auto_send_invoices: false,
+  };
+
+  const [form, setForm] = useState({ ...DEFAULTS, ...(settings || {}) });
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    if (settings) {
+      setForm((prev) => ({
+        ...prev,
+        ...settings,
+      }));
+    }
+  }, [settings]);
+
+  function updateField(key, val) {
+    setForm((prev) => ({ ...prev, [key]: val }));
+    setStatus(null);
+  }
+
+  function insertTag(tag) {
+    const cur = form.default_message_template || "";
+    updateField("default_message_template", cur + (cur.endsWith(" ") ? "" : " ") + tag);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setStatus(null);
+    try {
+      await onSave(form);
+      setStatus({ ok: true, msg: "WhatsApp business integration settings saved successfully." });
+    } catch (err) {
+      setStatus({ ok: false, msg: err?.message || "Failed to save WhatsApp settings." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    setStatus(null);
+    try {
+      const res = await onTest(form);
+      setStatus({ ok: res?.status === "success" || res?.ok, msg: res?.message || "Connection test succeeded." });
+    } catch (err) {
+      setStatus({ ok: false, msg: err?.message || "Test connection failed." });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  const isCloudApi = form.integration_method === "cloud_api";
+
+  return (
+    <section className="manager-workspace">
+      <div className="workspace-head">
+        <div>
+          <h2>WhatsApp Business Integration</h2>
+          <p>Deliver sales invoices directly to customers using your company's dedicated WhatsApp number.</p>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button className="soft" type="button" onClick={handleTest} disabled={testing || saving}>
+            {testing ? "Testing..." : "⚡ Test Connection"}
+          </button>
+          <button className="scan-btn" type="button" onClick={handleSave} disabled={saving || testing}>
+            {saving ? "Saving..." : "Save Settings"}
+          </button>
+        </div>
+      </div>
+
+      {status && (
+        <div
+          className="pos-notice-box"
+          style={{
+            background: status.ok ? "#dcfce7" : "#fee2e2",
+            borderLeft: `4px solid ${status.ok ? "#16a34a" : "#ef4444"}`,
+            color: status.ok ? "#166534" : "#991b1b",
+            padding: 12,
+            borderRadius: 6,
+            marginBottom: 16,
+          }}
+        >
+          {status.msg}
+        </div>
+      )}
+
+      {/* Security alert */}
+      <div
+        style={{
+          background: "#f0fdf4",
+          border: "1px solid #bbf7d0",
+          color: "#166534",
+          borderRadius: 8,
+          padding: "12px 16px",
+          marginBottom: 16,
+          fontSize: 13,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <span style={{ fontSize: 18 }}>🔒</span>
+        <div>
+          <strong>Backend-Secured Credentials:</strong> WhatsApp Cloud API access tokens and credentials are securely stored on the server backend. Tokens are never exposed to frontend JavaScript.
+        </div>
+      </div>
+
+      {/* Coexistence alert */}
+      <div
+        style={{
+          background: "#eff6ff",
+          border: "1px solid #bfdbfe",
+          color: "#1e40af",
+          borderRadius: 8,
+          padding: "12px 16px",
+          marginBottom: 20,
+          fontSize: 13,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <span style={{ fontSize: 18 }}>📱</span>
+        <div>
+          <strong>WhatsApp Business App Coexistence:</strong> Meta enables qualifying business phone numbers running the WhatsApp Business mobile app to coexist with the Cloud API, allowing your business to retain the mobile app while automated invoice dispatch is enabled in FinSage.
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        {/* Left Column: General & Mode Configuration */}
+        <div className="scan-card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <h3 style={{ margin: "0 0 6px 0", fontSize: 15 }}>General & Mode</h3>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontWeight: 600 }}>
+            <input
+              type="checkbox"
+              checked={!!form.is_enabled}
+              onChange={(e) => updateField("is_enabled", e.target.checked)}
+            />
+            Enable WhatsApp Invoice Delivery
+          </label>
+
+          <label>
+            Company Dedicated WhatsApp Number
+            <input
+              className="scan-input"
+              type="tel"
+              placeholder="+266 5800 0000 or +27 71 000 0000"
+              value={form.business_phone_number || ""}
+              onChange={(e) => updateField("business_phone_number", e.target.value)}
+            />
+            <small style={{ color: "var(--text-muted, #64748b)", display: "block", marginTop: 4 }}>
+              International format with country code. Invoices will be identified with this business number.
+            </small>
+          </label>
+
+          <label>
+            Business Display Name
+            <input
+              className="scan-input"
+              type="text"
+              placeholder="e.g. FinSphere Solutions"
+              value={form.business_display_name || ""}
+              onChange={(e) => updateField("business_display_name", e.target.value)}
+            />
+          </label>
+
+          <label>
+            Integration Method
+            <select
+              className="scan-input"
+              value={form.integration_method || "web_desktop"}
+              onChange={(e) => updateField("integration_method", e.target.value)}
+            >
+              <option value="web_desktop">Mode A — WhatsApp Web / Desktop (Fallback)</option>
+              <option value="cloud_api">Mode B — Meta WhatsApp Cloud API (Automated)</option>
+            </select>
+          </label>
+
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted, #64748b)",
+              background: "var(--surface-sunken, #f8fafc)",
+              padding: 10,
+              borderRadius: 6,
+            }}
+          >
+            {isCloudApi ? (
+              <span>
+                <strong>Mode B (Cloud API):</strong> Directly dispatches the sales invoice PDF document to the customer's WhatsApp via Meta's Graph API from your company's registered number. Delivery results and message IDs are tracked.
+              </span>
+            ) : (
+              <span>
+                <strong>Mode A (Web/Desktop):</strong> Automatically downloads the PDF invoice to the cashier's Windows Downloads folder and opens WhatsApp with the customer's number and invoice message prefilled for quick attachment.
+              </span>
+            )}
+          </div>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 6 }}>
+            <input
+              type="checkbox"
+              checked={!!form.auto_send_invoices}
+              onChange={(e) => updateField("auto_send_invoices", e.target.checked)}
+            />
+            <span>Automatic invoice delivery on completed sale (when customer phone is present)</span>
+          </label>
+        </div>
+
+        {/* Right Column: Cloud API credentials & Message Template */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {isCloudApi && (
+            <div className="scan-card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <h3 style={{ margin: "0 0 6px 0", fontSize: 15 }}>Meta Cloud API Credentials</h3>
+
+              <label>
+                WhatsApp Business Account ID (WABA ID)
+                <input
+                  className="scan-input"
+                  type="text"
+                  placeholder="e.g. 102938475610293"
+                  value={form.business_account_id || ""}
+                  onChange={(e) => updateField("business_account_id", e.target.value)}
+                />
+              </label>
+
+              <label>
+                Phone Number ID
+                <input
+                  className="scan-input"
+                  type="text"
+                  placeholder="e.g. 109876543210987"
+                  value={form.phone_number_id || ""}
+                  onChange={(e) => updateField("phone_number_id", e.target.value)}
+                />
+              </label>
+
+              <label>
+                API Access Token (System User or Permanent Token)
+                <input
+                  className="scan-input"
+                  type="password"
+                  placeholder={form.has_token ? "(Configured - leave blank to keep unchanged)" : "EAAB..."}
+                  value={form.access_token || ""}
+                  onChange={(e) => updateField("access_token", e.target.value)}
+                />
+                <small style={{ color: "var(--text-muted, #64748b)", display: "block", marginTop: 4 }}>
+                  {form.has_token
+                    ? "✓ An access token is currently configured on the backend. Enter a new token only if you wish to rotate it."
+                    : "Generate a permanent System User Token in Meta Business Manager with 'whatsapp_business_messaging' permission."}
+                </small>
+              </label>
+            </div>
+          )}
+
+          <div className="scan-card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <h3 style={{ margin: "0 0 6px 0", fontSize: 15 }}>Default Invoice Message Template</h3>
+            <label>
+              Message Content
+              <textarea
+                className="scan-input"
+                rows={5}
+                value={form.default_message_template || ""}
+                onChange={(e) => updateField("default_message_template", e.target.value)}
+                style={{ resize: "vertical", fontFamily: "inherit" }}
+              />
+            </label>
+            <div>
+              <small style={{ color: "var(--text-muted, #64748b)", display: "block", marginBottom: 6 }}>
+                Insert dynamic placeholders:
+              </small>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {["{customer_name}", "{invoice_number}", "{total_amount}", "{currency}", "{company_name}"].map(
+                  (tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      className="soft"
+                      style={{ fontSize: 11, padding: "3px 8px" }}
+                      onClick={() => insertTag(tag)}
+                    >
+                      + {tag}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
