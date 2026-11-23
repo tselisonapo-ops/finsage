@@ -1260,7 +1260,7 @@ Thank you for your business!`;
   }
 
   return (
-    <main className={`pos-page${showNumpad ? " is-payment-workspace" : ""}`}>
+    <main className={`pos-page${activePanel === "payment" ? " is-payment-workspace" : ""}`}>
       <header
         className={commandBarClass}
         onMouseEnter={() => {
@@ -1459,7 +1459,7 @@ Thank you for your business!`;
       )}
 
       {canAccessPos && (
-        <section className={`pos-grid${showNumpad ? " is-payment-workspace-grid" : ""}`}>
+        <section className={`pos-grid${activePanel === "payment" ? " is-payment-workspace-grid" : ""}`}>
           <aside className="left-panel">
             {isRestaurantLike && (
               <div className="quick-actions">
