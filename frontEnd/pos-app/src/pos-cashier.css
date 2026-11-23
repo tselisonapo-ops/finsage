@@ -1379,3 +1379,84 @@
     flex: 1 1 100%;
   }
 }
+/* LEFT-SIDE UNIFIED PAYMENT INPUT SECTION */
+.pos-left-payment-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  box-sizing: border-box;
+  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.07);
+}
+
+.pos-left-payment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.pos-left-payment-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.pos-left-payment-header p {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.pos-left-payment-close {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 1.4rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pos-left-payment-section .pos-numpad-container {
+  width: 100%;
+  margin: 0;
+}
+
+.pos-left-payment-section .pos-digital-delivery-card {
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.pos-left-payment-section .pos-delivery-input-row input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 760px) {
+  .pos-left-payment-section {
+    padding: 12px;
+  }
+}
+/* Give the payment input section the full left-panel workspace */
+.left-panel.is-payment-input-open > .scan-card,
+.left-panel.is-payment-input-open > .quick-actions,
+.left-panel.is-payment-input-open > .product-list {
+  display: none;
+}
+
+.left-panel.is-payment-input-open {
+  justify-content: flex-start;
+}

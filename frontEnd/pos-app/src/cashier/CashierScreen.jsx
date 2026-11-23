@@ -82,7 +82,6 @@ export function CashierPage() {
   // Digital Delivery (WhatsApp & Email) + Numpad
   const [customerWhatsapp, setCustomerWhatsapp] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
-  const [showNumpad, setShowNumpad] = useState(true);
   const [completedSaleModal, setCompletedSaleModal] = useState(null);
   const [emailSending, setEmailSending] = useState(false);
   const [emailStatus, setEmailStatus] = useState("");
@@ -1260,7 +1259,7 @@ Thank you for your business!`;
   }
 
   return (
-    <main className={`pos-page${activePanel === "payment" ? " is-payment-workspace" : ""}`}>
+    <main className="pos-page">
       <header
         className={commandBarClass}
         onMouseEnter={() => {
@@ -1459,8 +1458,8 @@ Thank you for your business!`;
       )}
 
       {canAccessPos && (
-        <section className={`pos-grid${activePanel === "payment" ? " is-payment-workspace-grid" : ""}`}>
-          <aside className="left-panel">
+        <section className="pos-grid">
+          <aside className={`left-panel${activePanel === "payment" ? " is-payment-input-open" : ""}`}>
             {isRestaurantLike && (
               <div className="quick-actions">
                 <button onClick={() => setActivePanel("sale")}>
@@ -1918,6 +1917,93 @@ Thank you for your business!`;
               </>
             )}
           </div>
+          {activePanel === "payment" && canSell && (
+            <div className="pos-left-payment-section">
+              <div className="pos-left-payment-header">
+                <div>
+                  <h3>Payment Input</h3>
+                  <p>Enter the amount and customer delivery details</p>
+                </div>
+
+                <button
+                  type="button"
+                  className="pos-left-payment-close"
+                  onClick={() => setActivePanel("sale")}
+                  title="Close payment input section"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="pos-numpad-container">
+                <div className="pos-numpad-header">
+                  <span>Numeric Keypad</span>
+                </div>
+
+                <div className="pos-quick-tender-chips">
+                  <button
+                    type="button"
+                    className="pos-chip-btn exact"
+                    onClick={() => handleNumpadKey("exact")}
+                  >
+                    Exact
+                  </button>
+
+                  <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+10")}>+10</button>
+                  <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+20")}>+20</button>
+                  <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+50")}>+50</button>
+                  <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+100")}>+100</button>
+                  <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+200")}>+200</button>
+                </div>
+
+                <div className="pos-numpad-grid">
+                  <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("7")}>7</button>
+                  <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("8")}>8</button>
+                  <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("9")}>9</button>
+
+                  <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("4")}>4</button>
+                  <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("5")}>5</button>
+                  <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("6")}>6</button>
+
+                  <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("1")}>1</button>
+                  <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("2")}>2</button>
+                  <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("3")}>3</button>
+
+                  <button type="button" className="pos-num-btn danger" onClick={() => handleNumpadKey("C")}>C</button>
+                  <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("0")}>0</button>
+                  <button type="button" className="pos-num-btn accent" onClick={() => handleNumpadKey("⌫")}>⌫</button>
+
+                  <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("00")}>00</button>
+                  <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey(".")}>.</button>
+                  <button type="button" className="pos-num-btn accent" onClick={() => handleNumpadKey("exact")}>Exact</button>
+                </div>
+              </div>
+
+              <div className="pos-digital-delivery-card">
+                <h4>📱 Customer Invoice / Receipt</h4>
+
+                <div className="pos-delivery-input-row">
+                  <label>Customer WhatsApp Number</label>
+                  <input
+                    type="tel"
+                    placeholder="e.g. 082 123 4567 or +27..."
+                    value={customerWhatsapp}
+                    onChange={(e) => setCustomerWhatsapp(e.target.value)}
+                  />
+                </div>
+
+                <div className="pos-delivery-input-row">
+                  <label>Customer Email Address</label>
+                  <input
+                    type="email"
+                    placeholder="customer@example.com"
+                    value={customerEmail}
+                    onChange={(e) => setCustomerEmail(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </aside>
 
         {canSell && (
@@ -2040,116 +2126,6 @@ Thank you for your business!`;
                     )}
                   </strong>
                 </div>
-              </div>
-
-              {/* Payment Workspace: Numpad + Quick Tender + Customer Delivery */}
-              <div className="pos-numpad-container">
-                <div className="pos-numpad-header">
-                  <span>Numeric Keypad (Touch / POS)</span>
-
-                  <button
-                    type="button"
-                    className="pos-numpad-toggle-btn"
-                    onClick={() => setShowNumpad((prev) => !prev)}
-                  >
-                    {showNumpad ? "Hide Numpad" : "Show Numpad"}
-                  </button>
-                </div>
-
-                {showNumpad && (
-                  <>
-                    <div className="pos-quick-tender-chips">
-                      <button
-                        type="button"
-                        className="pos-chip-btn exact"
-                        onClick={() => handleNumpadKey("exact")}
-                      >
-                        Exact
-                      </button>
-
-                      <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+10")}>+10</button>
-                      <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+20")}>+20</button>
-                      <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+50")}>+50</button>
-                      <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+100")}>+100</button>
-                      <button type="button" className="pos-chip-btn" onClick={() => handleNumpadKey("+200")}>+200</button>
-                    </div>
-
-                    <div className="pos-numpad-grid">
-                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("7")}>7</button>
-                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("8")}>8</button>
-                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("9")}>9</button>
-
-                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("4")}>4</button>
-                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("5")}>5</button>
-                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("6")}>6</button>
-
-                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("1")}>1</button>
-                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("2")}>2</button>
-                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("3")}>3</button>
-
-                      <button type="button" className="pos-num-btn danger" onClick={() => handleNumpadKey("C")}>C</button>
-                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("0")}>0</button>
-                      <button type="button" className="pos-num-btn accent" onClick={() => handleNumpadKey("⌫")}>⌫</button>
-
-                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey("00")}>00</button>
-                      <button type="button" className="pos-num-btn" onClick={() => handleNumpadKey(".")}>.</button>
-                      <button type="button" className="pos-num-btn accent" onClick={() => handleNumpadKey("exact")}>Exact</button>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {showNumpad && (
-                <div className="pos-digital-delivery-card">
-                  <h4>📱 Send Customer Invoice / Receipt</h4>
-
-                  <div className="pos-delivery-input-row">
-                    <label>Customer WhatsApp Number</label>
-                    <input
-                      type="tel"
-                      placeholder="e.g. 082 123 4567 or +27..."
-                      value={customerWhatsapp}
-                      onChange={(e) => setCustomerWhatsapp(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="pos-delivery-input-row">
-                    <label>Customer Email Address</label>
-                    <input
-                      type="email"
-                      placeholder="customer@example.com"
-                      value={customerEmail}
-                      onChange={(e) => setCustomerEmail(e.target.value)}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Digital Invoice / Receipt Delivery (WhatsApp & Email) */}
-              <div className="pos-digital-delivery-card">
-                <h4>📱 Send Customer Invoice / Receipt</h4>
-                <div className="pos-delivery-input-row">
-                  <label>Customer WhatsApp Number</label>
-                  <input
-                    type="tel"
-                    placeholder="e.g. 082 123 4567 or +27..."
-                    value={customerWhatsapp}
-                    onChange={(e) => setCustomerWhatsapp(e.target.value)}
-                  />
-                </div>
-                <div className="pos-delivery-input-row">
-                  <label>Customer Email Address</label>
-                  <input
-                    type="email"
-                    placeholder="customer@example.com"
-                    value={customerEmail}
-                    onChange={(e) => setCustomerEmail(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="payment-method-title">
-                Pay with {selectedPaymentMethod || "..."}
               </div>
 
               <div className="quick-actions">
