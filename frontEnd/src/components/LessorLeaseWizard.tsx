@@ -692,17 +692,19 @@ useEffect(() => {
         { method: "GET" }
       );
 
-      const rows = Array.isArray(response)
-        ? response
-        : (response?.rows || response?.items || response?.banks || response?.bank_accounts || []);
+      const rows: CompanyBankAccount[] = (
+        Array.isArray(response)
+          ? response
+          : (response?.rows || response?.items || response?.banks || response?.bank_accounts || [])
+      ) as CompanyBankAccount[];
 
       const validRows: CompanyBankAccount[] = rows
-        .map((row: any) => ({
+        .map((row) => ({
           ...row,
           id: Number(row.id),
         }))
         .filter(
-          (row: any) =>
+          (row) =>
             Number.isFinite(row.id) &&
             row.id > 0 &&
             row.is_active !== false
@@ -4780,6 +4782,50 @@ useEffect(() => {
         </div>
       )}
     </div>
+  );
+};
+
+// ── Type for the work-queue target payload ──
+type LessorIdcTarget = {
+  lessor_lease_id?: number | string;
+  lease_inception_date?: string | null;
+  amount?: number | string;
+  vat_rate?: number | string;
+  classification?: string;
+  manufacturer_dealer?: boolean;
+  asset_account?: string | null;
+};
+
+// ── Declare the global so TypeScript knows about it ──
+declare global {
+  interface Window {
+    openLessorIdcModal?: (target: LessorIdcTarget) => void;
+  }
+}
+
+// ── Global hook for re-opening the IDC modal from outside ──
+// Called by dashboard.js when the user clicks a
+// "lessor_idc_pending_posting" work-queue item.
+window.openLessorIdcModal = function (target: LessorIdcTarget) {
+  const leaseId = Number(target?.lessor_lease_id || 0);
+  if (!leaseId) return;
+
+  // Dispatch a custom event the lessor lease screen listens for.
+  // The wizard's own modal is not re-used here; instead the lessor
+  // lease screen renders its own IDC modal instance driven by
+  // pendingIdcLeaseId state (see Patch 5 below).
+  window.dispatchEvent(
+    new CustomEvent("lessor-idc-open", {
+      detail: {
+        lessor_lease_id: leaseId,
+        lease_inception_date: target?.lease_inception_date || null,
+        amount: Number(target?.amount || 0),
+        vat_rate: Number(target?.vat_rate || 0),
+        classification: target?.classification || "operating",
+        manufacturer_dealer: !!target?.manufacturer_dealer,
+        asset_account: target?.asset_account || null,
+      },
+    })
   );
 };
 

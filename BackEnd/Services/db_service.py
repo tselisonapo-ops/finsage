@@ -150244,6 +150244,77 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                         "action": "link_asset_grni",
                     },
                 })
+
+            # 7) Lessor leases with unposted initial direct costs
+            cur.execute(f"""
+                SELECT
+                    ll.id                          AS lessor_lease_id,
+                    ll.contract_no,
+                    ll.contract_name,
+                    ll.start_date                  AS lease_inception_date,
+                    ll.initial_direct_costs        AS amount,
+                    ll.vat_rate,
+                    ll.lease_classification,
+                    ll.manufacturer_dealer_lessor,
+                    ll.underlying_asset_account_code
+                FROM {schema}.lessor_leases ll
+                WHERE ll.company_id = %s
+                  AND ll.initial_direct_costs > 0
+                  AND ll.initial_direct_costs_recognised < ll.initial_direct_costs
+                  AND ll.initial_direct_costs_journal_id IS NULL
+                  AND ll.initial_direct_costs_bill_id IS NULL
+                  AND COALESCE(ll.status, '') NOT IN (
+                      'cancelled', 'terminated', 'reversed'
+                  )
+                ORDER BY ll.start_date DESC
+            """, (company_id,))
+
+            lessor_idc_rows = cur.fetchall() or []
+
+            for lr in lessor_idc_rows:
+                lr = dict(lr) if not isinstance(lr, dict) else lr
+
+                contract_label = (
+                    lr.get("contract_name")
+                    or lr.get("contract_no")
+                    or f"Lease {lr['lessor_lease_id']}"
+                )
+
+                idc_amount = float(lr.get("amount") or 0)
+
+                items.append({
+                    "type": "lessor_idc_pending_posting",
+                    "title": f"Lessor IDC unposted: {contract_label}",
+                    "count": 1,
+                    "amount": idc_amount,
+                    "hint": (
+                        f"Initial direct costs of {idc_amount:,.2f} "
+                        f"have not been recognised. Post them "
+                        f"before subsequent measurement."
+                    ),
+                    "screen": "lessor-subsequent",
+                    "severity": "warning",
+                    "target": {
+                        "screen": "lessor-subsequent",
+                        "action": "post_lessor_idc",
+                        "lessor_lease_id": int(lr["lessor_lease_id"]),
+                        "lease_inception_date": (
+                            lr["lease_inception_date"].isoformat()
+                            if lr.get("lease_inception_date")
+                            else None
+                        ),
+                        "amount": idc_amount,
+                        "vat_rate": float(lr.get("vat_rate") or 0),
+                        "classification": lr.get("lease_classification"),
+                        "manufacturer_dealer": bool(
+                            lr.get("manufacturer_dealer_lessor")
+                        ),
+                        "asset_account": lr.get(
+                            "underlying_asset_account_code"
+                        ),
+                    },
+                })
+
         return {
             "items": items[:limit],
             "count": len(items),

@@ -2074,13 +2074,51 @@ def lessor_subsequent_measurement(company_id, lease_id):
             required=False,
         )
 
+        workspace = db_service.get_lessor_subsequent_measurement_workspace(
+            company_id,
+            lease_id,
+            as_at=as_at,
+        )
+
+        # ── IDC enforcement ──────────────────────────────────
+        # If the lease has incurred initial direct costs that
+        # have not yet been recognised (no journal, no AP bill),
+        # surface a blocking warning so the UI can disable
+        # period posting until the IDC is cleared.
+        lease = workspace.get("lease") or {}
+        idc_incurred = float(lease.get("initial_direct_costs") or 0)
+        idc_recognised = float(lease.get("initial_direct_costs_recognised") or 0)
+        has_idc_journal = bool(lease.get("initial_direct_costs_journal_id"))
+        has_idc_bill = bool(lease.get("initial_direct_costs_bill_id"))
+
+        idc_pending = (
+            idc_incurred > 0
+            and idc_recognised < idc_incurred
+            and not has_idc_journal
+            and not has_idc_bill
+        )
+
+        if idc_pending:
+            warnings = workspace.get("blocking_warnings") or []
+            warnings.append({
+                "code": "LESSOR_IDC_PENDING",
+                "message": (
+                    "Initial direct costs of "
+                    f"{idc_incurred:,.2f} have not been posted. "
+                    "Post them before recognising subsequent periods."
+                ),
+                "lessor_lease_id": int(lease_id),
+                "idc_amount": idc_incurred,
+                "idc_recognised": idc_recognised,
+            })
+            workspace["blocking_warnings"] = warnings
+            workspace["can_post_periods"] = False
+        else:
+            workspace.setdefault("can_post_periods", True)
+
         return jsonify({
             "ok": True,
-            **db_service.get_lessor_subsequent_measurement_workspace(
-                company_id,
-                lease_id,
-                as_at=as_at,
-            ),
+            **workspace,
         })
     except ValueError as e:
         return _json_error(str(e), 400)
@@ -2089,7 +2127,7 @@ def lessor_subsequent_measurement(company_id, lease_id):
             "lessor_subsequent_measurement failed"
         )
         return _json_error(str(e), 500)
-
+    
 @lessor_bp.route(
     "/api/companies/<int:company_id>/lessor-leases/"
     "<int:lease_id>/accounting-schedule/"
@@ -2153,6 +2191,36 @@ def post_lessor_schedule_period(
         return deny
 
     try:
+        # ── IDC enforcement gate ─────────────────────────────
+        # Refuse to post any subsequent measurement period
+        # until initial direct costs are recognised.
+        lease = db_service.get_lessor_lease(company_id, lease_id)
+
+        if not lease:
+            return _json_error("Lessor lease not found", 404)
+
+        idc_incurred = float(lease.get("initial_direct_costs") or 0)
+        idc_recognised = float(lease.get("initial_direct_costs_recognised") or 0)
+        has_idc_journal = bool(lease.get("initial_direct_costs_journal_id"))
+        has_idc_bill = bool(lease.get("initial_direct_costs_bill_id"))
+
+        idc_pending = (
+            idc_incurred > 0
+            and idc_recognised < idc_incurred
+            and not has_idc_journal
+            and not has_idc_bill
+        )
+
+        if idc_pending:
+            return _json_error(
+                "Initial direct costs have not been posted. "
+                "Post them before recognising subsequent periods.",
+                409,
+                code="LESSOR_IDC_PENDING",
+                lessor_lease_id=int(lease_id),
+                idc_amount=idc_incurred,
+            )
+
         return jsonify({
             "ok": True,
             **db_service.post_lessor_period(

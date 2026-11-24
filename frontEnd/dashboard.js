@@ -10963,6 +10963,12 @@ const WORK_QUEUE_EXISTING = [
 
 const WORK_QUEUE_BACKEND_SUMMARY = [
   {
+    type: "lessor_idc_pending_posting",
+    title: "Lessor leases with unposted initial direct costs",
+    screen: "lessor-subsequent",
+    source: "backend_summary",
+  },
+  {
     type: "loan_payment_due",
     title: "Loan payments due this period",
     screen: "loans",
@@ -11214,6 +11220,371 @@ async function getVendorByPendingReceiptTxId(receiptTxId) {
   ) || null;
 }
 
+// ═══════════════════════════════════════════════════════════
+// LESSOR IDC MODAL — opened from Work Queue click
+// Uses existing .fsp-overlay / .fsp-modal CSS from dashboard.html
+// ═══════════════════════════════════════════════════════════
+
+window.openLessorIdcModal = async function (target) {
+  const leaseId = Number(target?.lessor_lease_id || 0);
+  if (!leaseId) return;
+
+  const cid =
+    (typeof getActiveCompanyId === "function"
+      ? getActiveCompanyId()
+      : null) ||
+    window.CURRENT_COMPANY_ID;
+
+  if (!cid) return;
+
+  const amount = Number(target?.amount || 0);
+  const vatRate = Number(target?.vat_rate || 0);
+  const inceptionDate =
+    target?.lease_inception_date ||
+    new Date().toISOString().slice(0, 10);
+
+  const classification = String(
+    target?.classification || "operating"
+  ).toLowerCase();
+
+  const manufacturerDealer = !!target?.manufacturer_dealer;
+
+  // Resolve the debit account from the target payload, or
+  // fall back to the same logic the wizard uses.
+  const assetAccount =
+    target?.asset_account ||
+    (classification === "finance"
+      ? manufacturerDealer
+        ? "PL_COS_5000"
+        : "BS_NCA_1640"
+      : "BS_NCA_1500");
+
+  // Remove any stale overlay
+  document
+    .querySelectorAll("#lessorIdcOverlay")
+    .forEach((el) => el.remove());
+
+  const overlay = document.createElement("div");
+  overlay.id = "lessorIdcOverlay";
+  overlay.className = "fsp-overlay";
+  overlay.style.zIndex = "9999";
+
+  overlay.innerHTML = `
+    <div class="fsp-modal" style="max-width:540px">
+      <div class="fsp-head">
+        <div class="fsp-title">Initial direct costs — Lease ${leaseId}</div>
+        <button class="fsp-x" type="button">&times;</button>
+      </div>
+      <div class="fsp-body">
+        <p class="fsp-msg">
+          This lease has initial direct costs of
+          <strong>${amount.toFixed(2)}</strong>.${vatRate > 0 ? ` (VAT rate: ${vatRate}%)` : ""}
+          Choose how these costs were paid or incurred.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px">
+          <button class="fsp-btn primary" id="lessorIdcPaidBtn" type="button">
+            Already paid — record payment and post journal
+          </button>
+          <button class="fsp-btn ghost" id="lessorIdcApBtn" type="button">
+            Not yet paid — create AP bill
+          </button>
+          <button class="fsp-btn ghost" id="lessorIdcCancelBtn" type="button">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Close handlers
+  overlay.querySelector(".fsp-x").onclick = () => overlay.remove();
+  overlay.querySelector("#lessorIdcCancelBtn").onclick = () =>
+    overlay.remove();
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  // ── Already paid → show payment form ──────────────────
+  overlay.querySelector("#lessorIdcPaidBtn").onclick = () => {
+    _showLessorIdcPaidForm(
+      overlay,
+      { leaseId, amount, vatRate, inceptionDate, classification, manufacturerDealer, assetAccount, cid }
+    );
+  };
+
+  // ── Not yet paid → fire AP bill postMessage ───────────
+  overlay.querySelector("#lessorIdcApBtn").onclick = () => {
+    window.parent?.postMessage(
+      {
+        type: "lessor_lease_create_ap_bill",
+        payload: {
+          source: "lessor_lease",
+          lessor_lease_id: leaseId,
+          vendor_id: null,
+          amount: amount,
+          vat_rate: vatRate,
+          asset_account: assetAccount,
+          description: `Lessor initial direct cost - Lease ${leaseId}`,
+          reference: `LESSOR-DC-${leaseId}`,
+          company_id: cid,
+          classification: classification,
+          manufacturer_dealer: manufacturerDealer,
+        },
+      },
+      "*"
+    );
+
+    overlay.remove();
+  };
+};
+
+function _showLessorIdcPaidForm(overlay, ctx) {
+  const { leaseId, amount, vatRate, inceptionDate, classification, manufacturerDealer, assetAccount, cid } = ctx;
+
+  // VAT hint
+  let vatHint = "";
+  if (vatRate > 0) {
+    const net = amount / (1 + vatRate / 100);
+    const vat = amount - net;
+    vatHint = `
+      <div style="font-size:12px;color:#64748b;margin-top:6px">
+        Amount entered as <strong>gross</strong>. VAT at ${vatRate}% &rarr;
+        net ${net.toFixed(2)} + VAT ${vat.toFixed(2)} = ${amount.toFixed(2)}
+      </div>`;
+  }
+
+  const modal = overlay.querySelector(".fsp-modal");
+  modal.innerHTML = `
+    <div class="fsp-head">
+      <div class="fsp-title">Record IDC payment</div>
+      <button class="fsp-x" type="button">&times;</button>
+    </div>
+    <div class="fsp-body">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">
+            Payment date
+          </label>
+          <input type="date" id="lessorIdcPayDate" value="${inceptionDate}"
+            style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px">
+          <div style="font-size:12px;color:#64748b;margin-top:4px">
+            Prefilled to lease inception date.
+          </div>
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">
+            Bank account
+          </label>
+          <select id="lessorIdcBankId" disabled
+            style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff">
+            <option value="">Loading bank accounts...</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">
+            Payment reference
+          </label>
+          <input type="text" id="lessorIdcPayRef" placeholder="LESSOR-DC-${leaseId}"
+            style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px">
+        </div>
+        <div style="padding:12px;background:#f8fafc;border-radius:8px;font-size:13px">
+          <strong>Amount to recognise:</strong> ${amount.toFixed(2)}
+          ${vatHint}
+        </div>
+        <div id="lessorIdcErr" style="display:none;color:#b91c1c;font-size:13px;padding:8px 10px;background:#fef2f2;border-radius:6px"></div>
+      </div>
+    </div>
+    <div class="fsp-actions">
+      <button class="fsp-btn ghost" id="lessorIdcBackBtn" type="button">Back</button>
+      <button class="fsp-btn primary" id="lessorIdcConfirmBtn" type="button">Confirm payment</button>
+    </div>
+  `;
+
+  // Re-bind close
+  overlay.querySelector(".fsp-x").onclick = () => overlay.remove();
+
+  // Back button → re-open the choice modal
+  overlay.querySelector("#lessorIdcBackBtn").onclick = () => {
+    overlay.remove();
+    window.openLessorIdcModal({
+      lessor_lease_id: leaseId,
+      amount: amount,
+      vat_rate: vatRate,
+      lease_inception_date: inceptionDate,
+      classification: classification,
+      manufacturer_dealer: manufacturerDealer,
+      asset_account: assetAccount,
+    });
+  };
+
+  // Load bank accounts
+  _loadBankAccountsForLessorIdc(cid);
+
+  // Confirm payment
+  overlay.querySelector("#lessorIdcConfirmBtn").onclick = async () => {
+    const bankId = Number(
+      overlay.querySelector("#lessorIdcBankId").value || 0
+    );
+    const payDate = overlay.querySelector("#lessorIdcPayDate").value;
+    const ref =
+      overlay.querySelector("#lessorIdcPayRef").value.trim() ||
+      `LESSOR-DC-${leaseId}`;
+    const errEl = overlay.querySelector("#lessorIdcErr");
+
+    if (!payDate) {
+      errEl.textContent = "Select the actual payment date.";
+      errEl.style.display = "block";
+      return;
+    }
+
+    if (!bankId) {
+      errEl.textContent = "Select the bank account used for payment.";
+      errEl.style.display = "block";
+      return;
+    }
+
+    const btn = overlay.querySelector("#lessorIdcConfirmBtn");
+    btn.disabled = true;
+    btn.textContent = "Posting...";
+    errEl.style.display = "none";
+
+    try {
+      const res = await apiFetch(
+        `/api/companies/${cid}/lessor-leases/${leaseId}/direct-costs/paid`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            bank_account_id: bankId,
+            payment_date: payDate,
+            amount: amount,
+            vat_rate: vatRate,
+            asset_account: assetAccount,
+            reference: ref,
+            description: `Lessor initial direct cost - Lease ${leaseId}`,
+          }),
+        }
+      );
+
+      if (!res?.ok) {
+        throw new Error(
+          res?.error ||
+            "Failed to record the initial direct cost payment."
+        );
+      }
+
+      overlay.remove();
+
+      // Notify the user
+      overlay.remove();
+
+      showToast?.("Initial direct costs posted successfully.");
+
+      // Select the lease in the dropdown and reload the workspace
+      // so the blocking_warnings / can_post_periods flags update.
+      const leaseSelect = document.getElementById("lsmLeaseId");
+
+      if (leaseSelect) {
+        leaseSelect.value = String(leaseId);
+
+        // If the option doesn't exist yet (dropdown not populated),
+        // the value won't stick — just tell the user to select it.
+        if (leaseSelect.value !== String(leaseId)) {
+          showToast?.(
+            "Select the lease to view the updated workspace."
+          );
+        }
+      }
+
+      // Call loadWorkspace directly — it reads from #lsmLeaseId
+      // and #lsmAsAt which are already in the DOM.
+      if (typeof loadWorkspace === "function") {
+        loadWorkspace();
+      }
+    } catch (err) {
+      errEl.textContent =
+        err?.message ||
+        "Failed to record the initial direct cost payment.";
+      errEl.style.display = "block";
+      btn.disabled = false;
+      btn.textContent = "Confirm payment";
+    }
+  };
+}
+
+async function _loadBankAccountsForLessorIdc(cid) {
+  const select = document.getElementById("lessorIdcBankId");
+  if (!select) return;
+
+  try {
+    const response = await apiFetch(
+      `/api/companies/${cid}/bank_accounts`,
+      { method: "GET" }
+    );
+
+    const rows = Array.isArray(response)
+      ? response
+      : response?.rows ||
+        response?.items ||
+        response?.banks ||
+        response?.bank_accounts ||
+        [];
+
+    select.innerHTML = '<option value="">Select bank account...</option>';
+
+    const validRows = rows
+      .map((r) => ({ ...r, id: Number(r.id) }))
+      .filter(
+        (r) =>
+          Number.isFinite(r.id) &&
+          r.id > 0 &&
+          r.is_active !== false
+      );
+
+    if (!validRows.length) {
+      select.innerHTML =
+        '<option value="">No active bank accounts found</option>';
+      select.disabled = false;
+      return;
+    }
+
+    validRows.forEach((acc) => {
+      const accNumber =
+        acc.account_number || acc.account_number_masked;
+      const labelParts = [
+        acc.bank_name,
+        acc.account_name,
+        accNumber ? `A/C: ${accNumber}` : null,
+        acc.currency ? `(${acc.currency})` : null,
+      ].filter(Boolean);
+
+      const label = labelParts.join(" - ") || `Bank Account ${acc.id}`;
+
+      const opt = document.createElement("option");
+      opt.value = String(acc.id);
+      opt.textContent =
+        label + (acc.is_default_payments ? " (Default)" : "");
+
+      const ledgerCode = (acc.ledger_account_code || "").trim();
+      if (!ledgerCode) {
+        opt.disabled = true;
+        opt.textContent += " (Missing linked ledger code)";
+      }
+
+      select.appendChild(opt);
+    });
+
+    select.disabled = false;
+  } catch (err) {
+    console.error("[LESSOR IDC] Failed to load bank accounts", err);
+    select.innerHTML =
+      '<option value="">Failed to load bank accounts</option>';
+    select.disabled = false;
+  }
+}
+
 window.openGrniPendingBillingFromWorkQueue = async function (target = {}) {
   const receiptTxId = Number(target.receipt_tx_id || target.tx_id || target.id || 0) || null;
 
@@ -11317,6 +11688,34 @@ document.addEventListener("click", async (e) => {
 
     setTimeout(() => {
       window.openGrniPendingBillingFromWorkQueue?.(target);
+    }, 300);
+
+    return;
+  }
+
+  if (action === "post_lessor_idc") {
+    await fsGoToScreen("lessor-subsequent", 180);
+
+    setTimeout(() => {
+      // Select the lease in the dropdown so the workspace
+      // loads behind the modal.
+      const leaseSelect = document.getElementById("lsmLeaseId");
+      if (leaseSelect) {
+        leaseSelect.value = String(target.lessor_lease_id);
+
+        // If the option exists in the dropdown, load the
+        // workspace so the user sees the lease behind the modal.
+        if (
+          leaseSelect.value === String(target.lessor_lease_id) &&
+          typeof loadWorkspace === "function"
+        ) {
+          loadWorkspace();
+        }
+      }
+
+      // Open the IDC modal regardless — it doesn't depend
+      // on the workspace being loaded.
+      window.openLessorIdcModal?.(target);
     }, 300);
 
     return;
@@ -45243,16 +45642,56 @@ window.postTerm = async function postTerm() {
     renderSchedule();
     renderReporting();
 
-    const hasPostedPeriods=state.schedule.some(
-      row=>Number(row.recognition_journal_id || 0)>0
+    const hasPostedPeriods = state.schedule.some(
+      row => Number(row.recognition_journal_id || 0) > 0
     );
     const active = !!state.lease;
-    $("lsmPostThroughBtn").disabled = !active;
-    $("lsmInvoiceThroughBtn").disabled = !active;
-    $("lsmEditLeaseBtn").disabled = !active || !canCorrectLease();
-    $("lsmRecalculateBtn").disabled=!active || hasPostedPeriods;
-  }
 
+    // ── IDC enforcement ──────────────────────────────────
+    // Surface blocking_warnings (e.g. initial direct costs
+    // not yet posted) and disable period-posting buttons
+    // until the block is cleared.
+    const warnings = state.workspace?.blocking_warnings || [];
+    const canPostPeriods = state.workspace?.can_post_periods !== false;
+
+    const warningHost = $("lsmWarnings");
+    if (warningHost) {
+      if (warnings.length) {
+        warningHost.innerHTML = warnings
+          .map(
+            (w) =>
+              `<div class="lsm-message lsm-message-warning">${
+                w.message || w
+              }</div>`
+          )
+          .join("");
+        warningHost.style.display = "block";
+      } else {
+        warningHost.innerHTML = "";
+        warningHost.style.display = "none";
+      }
+    }
+
+    // Toolbar buttons — disable post/invoice through when blocked
+    $("lsmPostThroughBtn").disabled = !active || !canPostPeriods;
+    $("lsmInvoiceThroughBtn").disabled = !active || !canPostPeriods;
+    $("lsmEditLeaseBtn").disabled = !active || !canCorrectLease();
+    $("lsmRecalculateBtn").disabled = !active || hasPostedPeriods;
+
+    // Per-row post buttons in the schedule table — only
+    // force-disable when blocked. When NOT blocked, leave
+    // them alone so renderSchedule()'s own logic (posted vs
+    // unposted) stays intact.
+    if (!canPostPeriods) {
+      document
+        .querySelectorAll(".lsm-table .lsm-icon-btn-primary")
+        .forEach((btn) => {
+          btn.disabled = true;
+          btn.title = "Post initial direct costs first";
+        });
+    }
+  }
+  
   async function loadWorkspace() {
     const companyId = cid();
     const leaseId = Number($("lsmLeaseId")?.value || 0);
@@ -45303,6 +45742,22 @@ window.postTerm = async function postTerm() {
       busy(false);
     }
   }
+
+  window.refreshLessorSubsequent = function (leaseId) {
+    const cid =
+      (typeof getActiveCompanyId === "function"
+        ? getActiveCompanyId()
+        : null) ||
+      window.CURRENT_COMPANY_ID;
+
+    if (!cid || !leaseId) return;
+
+    // Call whatever function already loads the workspace.
+    // Adapt the function name to match yours.
+    if (typeof loadLessorSubsequent === "function") {
+      loadLessorSubsequent(cid, leaseId);
+    }
+  };
 
   function canCorrectLease() {
     const lease = state.lease || {};
