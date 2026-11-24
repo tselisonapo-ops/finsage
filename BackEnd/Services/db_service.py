@@ -79761,7 +79761,7 @@ class DatabaseService:
 
         opening_finance = one(
             f"""
-            WITH last_rows AS (
+            WITH last_posted AS (
                 SELECT DISTINCT ON (s.lessor_lease_id)
                     s.lessor_lease_id,
                     s.closing_net_investment,
@@ -79769,28 +79769,71 @@ class DatabaseService:
                     s.noncurrent_portion
                 FROM {schema}.lessor_lease_schedule s
                 JOIN {schema}.lessor_leases l
-                ON l.id=s.lessor_lease_id
-                AND l.company_id=s.company_id
+                  ON l.id=s.lessor_lease_id
+                 AND l.company_id=s.company_id
                 WHERE s.company_id=%s
-                AND s.is_active=TRUE
-                AND COALESCE(l.lease_classification,'operating')='finance'
-                AND COALESCE(s.recognition_journal_id,0)>0
-                AND s.period_end<%s
-                {status_sql}
-                ORDER BY s.lessor_lease_id,s.period_end DESC,s.period_no DESC
+                  AND s.is_active=TRUE
+                  AND COALESCE(l.lease_classification,'operating')='finance'
+                  AND COALESCE(s.recognition_journal_id,0)>0
+                  AND s.period_end<%s
+                ORDER BY
+                    s.lessor_lease_id,
+                    s.period_end DESC,
+                    s.period_no DESC
+            ),
+            initial_rows AS (
+                SELECT DISTINCT ON (s.lessor_lease_id)
+                    s.lessor_lease_id,
+                    s.opening_net_investment
+                FROM {schema}.lessor_lease_schedule s
+                JOIN {schema}.lessor_leases l
+                  ON l.id=s.lessor_lease_id
+                 AND l.company_id=s.company_id
+                WHERE s.company_id=%s
+                  AND s.is_active=TRUE
+                  AND COALESCE(l.lease_classification,'operating')='finance'
+                  AND COALESCE(l.commencement_journal_id,0)>0
+                  AND COALESCE(l.commencement_date,l.start_date)<%s
+                ORDER BY
+                    s.lessor_lease_id,
+                    s.period_no ASC
+            ),
+            balances AS (
+                SELECT
+                    l.id,
+                    COALESCE(
+                        p.closing_net_investment,
+                        i.opening_net_investment,
+                        0
+                    ) AS net_investment,
+                    COALESCE(p.current_portion,0) AS current_portion,
+                    COALESCE(p.noncurrent_portion,0) AS noncurrent_portion
+                FROM {schema}.lessor_leases l
+                LEFT JOIN last_posted p
+                  ON p.lessor_lease_id=l.id
+                LEFT JOIN initial_rows i
+                  ON i.lessor_lease_id=l.id
+                WHERE l.company_id=%s
+                  AND COALESCE(l.lease_classification,'operating')='finance'
+                  AND COALESCE(l.commencement_date,l.start_date)<%s
+                  {status_sql}
             )
             SELECT
-                COALESCE(SUM(closing_net_investment),0) AS opening_net_investment,
+                COALESCE(SUM(net_investment),0) AS opening_net_investment,
                 COALESCE(SUM(current_portion),0) AS opening_current,
                 COALESCE(SUM(noncurrent_portion),0) AS opening_noncurrent
-            FROM last_rows
+            FROM balances
             """,
-            (company_id, from_date),
+            (
+                company_id, from_date,
+                company_id, from_date,
+                company_id, from_date,
+            ),
         )
 
         closing_finance = one(
             f"""
-            WITH last_rows AS (
+            WITH last_posted AS (
                 SELECT DISTINCT ON (s.lessor_lease_id)
                     s.lessor_lease_id,
                     s.closing_net_investment,
@@ -79798,23 +79841,66 @@ class DatabaseService:
                     s.noncurrent_portion
                 FROM {schema}.lessor_lease_schedule s
                 JOIN {schema}.lessor_leases l
-                ON l.id=s.lessor_lease_id
-                AND l.company_id=s.company_id
+                  ON l.id=s.lessor_lease_id
+                 AND l.company_id=s.company_id
                 WHERE s.company_id=%s
-                AND s.is_active=TRUE
-                AND COALESCE(l.lease_classification,'operating')='finance'
-                AND COALESCE(s.recognition_journal_id,0)>0
-                AND s.period_end<=%s
-                {status_sql}
-                ORDER BY s.lessor_lease_id,s.period_end DESC,s.period_no DESC
+                  AND s.is_active=TRUE
+                  AND COALESCE(l.lease_classification,'operating')='finance'
+                  AND COALESCE(s.recognition_journal_id,0)>0
+                  AND s.period_end<=%s
+                ORDER BY
+                    s.lessor_lease_id,
+                    s.period_end DESC,
+                    s.period_no DESC
+            ),
+            initial_rows AS (
+                SELECT DISTINCT ON (s.lessor_lease_id)
+                    s.lessor_lease_id,
+                    s.opening_net_investment
+                FROM {schema}.lessor_lease_schedule s
+                JOIN {schema}.lessor_leases l
+                  ON l.id=s.lessor_lease_id
+                 AND l.company_id=s.company_id
+                WHERE s.company_id=%s
+                  AND s.is_active=TRUE
+                  AND COALESCE(l.lease_classification,'operating')='finance'
+                  AND COALESCE(l.commencement_journal_id,0)>0
+                  AND COALESCE(l.commencement_date,l.start_date)<=%s
+                ORDER BY
+                    s.lessor_lease_id,
+                    s.period_no ASC
+            ),
+            balances AS (
+                SELECT
+                    l.id,
+                    COALESCE(
+                        p.closing_net_investment,
+                        i.opening_net_investment,
+                        0
+                    ) AS net_investment,
+                    COALESCE(p.current_portion,0) AS current_portion,
+                    COALESCE(p.noncurrent_portion,0) AS noncurrent_portion
+                FROM {schema}.lessor_leases l
+                LEFT JOIN last_posted p
+                  ON p.lessor_lease_id=l.id
+                LEFT JOIN initial_rows i
+                  ON i.lessor_lease_id=l.id
+                WHERE l.company_id=%s
+                  AND COALESCE(l.lease_classification,'operating')='finance'
+                  AND COALESCE(l.commencement_date,l.start_date)<=%s
+                  {status_sql}
             )
             SELECT
-                COALESCE(SUM(closing_net_investment),0) AS closing_net_investment,
+                COALESCE(SUM(net_investment),0) AS closing_net_investment,
                 COALESCE(SUM(current_portion),0) AS current_portion,
                 COALESCE(SUM(noncurrent_portion),0) AS noncurrent_portion
-            FROM last_rows
+            FROM balances
             """,
-            (company_id, as_of),
+            (
+                company_id, as_of,
+                company_id, as_of,
+                company_id, as_of,
+            ),
         )
 
         finance_additions = one(
