@@ -83358,8 +83358,14 @@ class DatabaseService:
                 l.asset_id,
                 a.asset_name,
                 a.asset_code,
-                COALESCE(NULLIF(a.asset_name,''),NULLIF(l.underlying_asset_description,''),l.contract_name) AS leased_asset_name,
-                l.underlying_asset_description,
+                COALESCE(
+                    NULLIF(a.asset_name,''),
+                    NULLIF(l.contract_name,'')
+                ) AS leased_asset_name,
+                COALESCE(
+                    NULLIF(a.asset_name,''),
+                    NULLIF(l.contract_name,'')
+                ) AS underlying_asset_description,
                 l.currency,
                 l.vat_rate,
                 l.revenue_account_code,
