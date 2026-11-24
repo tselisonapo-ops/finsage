@@ -106351,7 +106351,7 @@ class DatabaseService:
     def pos_get_sale_receipt_data(self, company_id: int, sale_id: int) -> dict | None:
         schema = self.company_schema(company_id)
         sale = self.fetch_one(f"""
-            SELECT s.*, c.customer_name, c.email AS customer_email, c.phone AS customer_phone
+            SELECT s.*, s.customer_name, c.email AS customer_email, c.phone AS customer_phone
             FROM {schema}.pos_sales s
             LEFT JOIN {schema}.customers c ON c.id = s.customer_id
             WHERE s.company_id = %s AND s.id = %s
