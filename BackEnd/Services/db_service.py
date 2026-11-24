@@ -71210,6 +71210,46 @@ class DatabaseService:
                     AND id = %s
                 """, (company_id, source_id))
 
+            elif source == "lessor_lease_finance_income" and source_id:
+                # --------------------------------------------------
+                # LESSOR IFRS 16 — SUBSEQUENT MEASUREMENT REVERSAL
+                # --------------------------------------------------
+                # The journal reversal has already reversed the GL.
+                # Restore the schedule period to scheduled so it can
+                # be posted again. Preserve all calculations and
+                # invoice/billing history.
+                cur.execute(f"""
+                    UPDATE {schema}.lessor_lease_schedule
+                    SET
+                        recognition_journal_id = NULL,
+                        status = 'scheduled',
+                        posted_at = NULL,
+                        posted_by_user_id = NULL,
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                      AND id = %s
+                      AND recognition_journal_id = %s
+                      AND lessor_lease_id = (
+                          SELECT lessor_lease_id
+                          FROM {schema}.lessor_lease_schedule
+                          WHERE company_id = %s
+                            AND id = %s
+                      )
+                """, (
+                    int(company_id),
+                    int(source_id),
+                    int(journal_id),
+                    int(company_id),
+                    int(source_id),
+                ))
+
+                if cur.rowcount != 1:
+                    raise ValueError(
+                        "LESSOR_PERIOD_REVERSAL_UPDATE_FAILED|"
+                        f"schedule_id={source_id}|"
+                        f"journal_id={journal_id}"
+                    )
+                
             elif source == "bill" and source_id:
                 bill_id = int(source_id)
 
