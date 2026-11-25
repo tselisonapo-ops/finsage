@@ -9345,180 +9345,6 @@ tbody tr:hover {
 }
 
 /* =========================================================
-   DEFERRED TAX — FULLSCREEN + CLEAN TABLE LAYOUT (v2)
-   - Removes max-width cap so the page uses the full
-     content width (sidenav is preserved by .main margin).
-   - Switches the run-detail tables to table-layout: fixed
-     so column widths can be controlled explicitly.
-   - Allocates a clean, comfortable width to the Message /
-     Notes column and makes the other columns smaller and
-     wrap cleanly instead of pushing the row wider.
-   ========================================================= */
-
-/* Run detail tables — fixed layout for predictable columns */
-#dtRunDetail .dt-table,
-#dtAssetTaxRunDetail .dt-table {
-  table-layout: fixed;
-  min-width: 0;
-  width: 100%;
-}
-
-/* Header cells: allow wrapping, smaller padding */
-#dtRunDetail .dt-table thead th,
-#dtAssetTaxRunDetail .dt-table thead th {
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  padding: 10px 8px;
-  font-size: 10.5px;
-  letter-spacing: 0.02em;
-  line-height: 1.25;
-  vertical-align: bottom;
-  text-align: left;
-  min-width: 0;
-  max-width: none;
-}
-
-/* Body cells: allow wrapping, smaller padding */
-#dtRunDetail .dt-table tbody td,
-#dtAssetTaxRunDetail .dt-table tbody td {
-  padding: 10px 8px;
-  font-size: 12px;
-  line-height: 1.4;
-  vertical-align: top;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  min-width: 0;
-  max-width: none;
-}
-
-/* Override the old "last-child" rule that targeted the wrong column
-   in draft mode (Action is last, not Message) */
-#dtRunDetail .dt-table td:last-child,
-#dtAssetTaxRunDetail .dt-table td:last-child {
-  min-width: 0;
-  max-width: none;
-  color: inherit;
-}
-
-/* Numeric columns: right-aligned, no wrap */
-#dtRunDetail .dt-table thead th:nth-child(4),
-#dtRunDetail .dt-table thead th:nth-child(5),
-#dtRunDetail .dt-table thead th:nth-child(6),
-#dtRunDetail .dt-table thead th:nth-child(8),
-#dtRunDetail .dt-table tbody td:nth-child(4),
-#dtRunDetail .dt-table tbody td:nth-child(5),
-#dtRunDetail .dt-table tbody td:nth-child(6),
-#dtRunDetail .dt-table tbody td:nth-child(8),
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(5),
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(6),
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(7),
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(8),
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(9),
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(10),
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(11),
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(12),
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(13),
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(14),
-#dtAssetTaxRunDetail .dt-table tbody td:nth-child(5),
-#dtAssetTaxRunDetail .dt-table tbody td:nth-child(6),
-#dtAssetTaxRunDetail .dt-table tbody td:nth-child(7),
-#dtAssetTaxRunDetail .dt-table tbody td:nth-child(8),
-#dtAssetTaxRunDetail .dt-table tbody td:nth-child(9),
-#dtAssetTaxRunDetail .dt-table tbody td:nth-child(10),
-#dtAssetTaxRunDetail .dt-table tbody td:nth-child(11),
-#dtAssetTaxRunDetail .dt-table tbody td:nth-child(12),
-#dtAssetTaxRunDetail .dt-table tbody td:nth-child(13),
-#dtAssetTaxRunDetail .dt-table tbody td:nth-child(14) {
-  text-align: right;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  word-break: normal;
-  overflow-wrap: normal;
-}
-
-/* ---------- #dtRunDetail column widths ----------
-   10 columns normally, 11 in draft mode (Action is last) */
-#dtRunDetail .dt-table thead th:nth-child(1)  { width: 13%; }  /* Description */
-#dtRunDetail .dt-table thead th:nth-child(2)  { width: 6%; }   /* Source */
-#dtRunDetail .dt-table thead th:nth-child(3)  { width: 7%; }   /* Balance Type */
-#dtRunDetail .dt-table thead th:nth-child(4)  { width: 9%; }   /* Carrying Amount */
-#dtRunDetail .dt-table thead th:nth-child(5)  { width: 9%; }   /* Tax Base */
-#dtRunDetail .dt-table thead th:nth-child(6)  { width: 7%; }   /* Difference */
-#dtRunDetail .dt-table thead th:nth-child(7)  { width: 6%; }   /* Type */
-#dtRunDetail .dt-table thead th:nth-child(8)  { width: 8%; }   /* Deferred Tax */
-#dtRunDetail .dt-table thead th:nth-child(9)  { width: 8%; }   /* Scan Status */
-
-/* Message column — clean wrapping, comfortable width */
-#dtRunDetail .dt-table thead th:nth-child(10),
-#dtRunDetail .dt-table tbody td:nth-child(10) {
-  width: 20%;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  color: #62788c;
-  font-size: 11.5px;
-  line-height: 1.45;
-}
-
-/* Action column (only in draft mode) */
-#dtRunDetail .dt-table thead th:nth-child(11),
-#dtRunDetail .dt-table tbody td:nth-child(11) {
-  width: 7%;
-  white-space: normal;
-  word-break: break-word;
-  text-align: left;
-}
-
-#dtRunDetail .dt-table tbody td:nth-child(11) .btn {
-  white-space: normal;
-  word-break: break-word;
-  padding: 6px 8px;
-  font-size: 11px;
-  line-height: 1.2;
-}
-
-/* ---------- #dtAssetTaxRunDetail column widths ----------
-   15 columns */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(1)  { width: 12%; }  /* Asset */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(2)  { width: 6%; }   /* Rule */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(3)  { width: 6%; }   /* Source */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(4)  { width: 6%; }   /* Method */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(5)  { width: 4%; }   /* Rate */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(6)  { width: 6%; }   /* Opening Tax WDV */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(7)  { width: 5%; }   /* Additions */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(8)  { width: 6%; }   /* Initial Allowance */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(9)  { width: 6%; }   /* Annual Allowance */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(10) { width: 6%; }   /* Total Allowance */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(11) { width: 6%; }   /* Closing Tax WDV */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(12) { width: 6%; }   /* Book Depreciation */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(13) { width: 6%; }   /* Tax Adjustment */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(14) { width: 6%; }   /* Temporary Difference */
-
-/* Notes column — clean wrapping */
-#dtAssetTaxRunDetail .dt-table thead th:nth-child(15),
-#dtAssetTaxRunDetail .dt-table tbody td:nth-child(15) {
-  width: 13%;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  color: #62788c;
-  font-size: 11.5px;
-  line-height: 1.45;
-}
-
-/* Small screens: allow horizontal scroll for the detail tables */
-@media (max-width: 1180px) {
-  #dtRunDetail .dt-table {
-    min-width: 1100px;
-  }
-  #dtAssetTaxRunDetail .dt-table {
-    min-width: 1400px;
-  }
-}
-
-/* =========================================================
    IFRS 16 LESSOR SUBSEQUENT MEASUREMENT
 ========================================================= */
 
@@ -18033,6 +17859,238 @@ body{
       var tries = 0;
       var iv = setInterval(function(){
         if(patchScreenPolicy() || ++tries > 50){ clearInterval(iv); }
+      }, 100);
+    }
+  })();
+  </script>
+
+  <!-- ═══ SCREEN PATCH: add "bank-feeds" and "invoice-templates" to
+       SCREEN_POLICY and wrap switchScreen so these two screens route
+       correctly. Without this, canOpenScreen() returns false and the
+       user sees "This screen is not enabled yet." when clicking
+       Live Bank Feeds or Invoice Templates in the nav or on the
+       Bank Reconciliation page. ═══ -->
+  <script>
+  (function(){
+    "use strict";
+
+    // ── 1. Patch SCREEN_POLICY ──────────────────────────────────
+    function patchScreenPolicy(){
+      if(typeof SCREEN_POLICY === "undefined" || !SCREEN_POLICY) return false;
+
+      if(!SCREEN_POLICY["bank-feeds"]){
+        SCREEN_POLICY["bank-feeds"] = {
+          auth: "private",
+          minRole: "clerk",
+          permissionAny: ["can_manage_banking", "can_post_journals"]
+        };
+      }
+
+      if(!SCREEN_POLICY["invoice-templates"]){
+        SCREEN_POLICY["invoice-templates"] = {
+          auth: "private",
+          minRole: "clerk",
+          permission: "can_manage_ar"
+        };
+      }
+
+      return true;
+    }
+
+    // ── 2. Patch APP_SCREEN_ROUTES (for URL routing) ──────────
+    function patchAppScreenRoutes(){
+      if(typeof APP_SCREEN_ROUTES === "undefined" || !APP_SCREEN_ROUTES) return false;
+
+      if(!APP_SCREEN_ROUTES["bank-feeds"]){
+        APP_SCREEN_ROUTES["bank-feeds"] = "bank-feeds";
+      }
+      if(!APP_SCREEN_ROUTES["invoice-templates"]){
+        APP_SCREEN_ROUTES["invoice-templates"] = "invoice-templates";
+      }
+
+      // Also patch the reverse map if it exists
+      if(typeof APP_ROUTE_SCREENS !== "undefined" && APP_ROUTE_SCREENS){
+        if(!APP_ROUTE_SCREENS["bank-feeds"]) APP_ROUTE_SCREENS["bank-feeds"] = "bank-feeds";
+        if(!APP_ROUTE_SCREENS["invoice-templates"]) APP_ROUTE_SCREENS["invoice-templates"] = "invoice-templates";
+      }
+
+      return true;
+    }
+
+    // ── 3. Helper: show a screen element ───────────────────────
+    function showScreen(base){
+      // Hide all screens
+      document.querySelectorAll(".screen").forEach(function(s){
+        s.classList.remove("active");
+        s.classList.add("hidden");
+      });
+
+      // Show the target screen
+      var el = document.getElementById("screen-" + base);
+      if(el){
+        el.classList.remove("hidden");
+        el.classList.add("active");
+        if(el.style.display === "none") el.style.display = "";
+      }
+
+      return !!el;
+    }
+
+    // ── 4. Helper: update nav highlight ────────────────────────
+    function updateNavHighlight(target){
+      document.querySelectorAll(".nav-item-link").forEach(function(a){
+        a.classList.remove("active");
+      });
+      var activeLink = document.querySelector('[data-nav="' + target + '"]');
+      if(activeLink) activeLink.classList.add("active");
+    }
+
+    // ── 5. Helper: update screen title ─────────────────────────
+    function updateScreenTitle(title){
+      var el = document.getElementById("screenTitle");
+      if(el) el.textContent = title;
+    }
+
+    // ── 6. Wrap switchScreen to handle these screens ───────────
+    // The external dashboard.js may already route these correctly.
+    // This wrapper intercepts bank-feeds and invoice-templates:
+    //   - If the original already handles them, it runs first and
+    //     we only call the bind function as a fallback.
+    //   - If the original doesn't handle them, we do everything:
+    //     show the screen, update nav, update title, call bind.
+    var _originalSwitchScreen = null;
+    var _switchScreenWrapped = false;
+
+    function wrapSwitchScreen(){
+      if(_switchScreenWrapped) return true;
+      if(typeof window.switchScreen !== "function") return false;
+
+      _originalSwitchScreen = window.switchScreen;
+      _switchScreenWrapped = true;
+
+      window.switchScreen = async function patchedSwitchScreen(name, opts){
+        var target = name;
+
+        // Normalise aliases the same way the original does
+        if(typeof resolveScreenName === "function"){
+          target = resolveScreenName(target);
+        }
+
+        // ── Intercept bank-feeds ──────────────────────────────
+        if(target === "bank-feeds"){
+          // Track whether the original called bindBankFeedsScreen
+          var _origCalledBind = false;
+          var _origBindBank = window.bindBankFeedsScreen;
+          if(typeof _origBindBank === "function"){
+            window.bindBankFeedsScreen = async function(){
+              _origCalledBind = true;
+              return _origBindBank.apply(this, arguments);
+            };
+          }
+
+          // Try the original switchScreen first
+          var _origSucceeded = false;
+          try {
+            await _originalSwitchScreen.call(this, name, opts);
+            _origSucceeded = true;
+          } catch(e) {
+            console.error("[bank-feeds patch] original switchScreen error:", e);
+          }
+
+          // Restore the original bind function
+          window.bindBankFeedsScreen = _origBindBank;
+
+          // Fallback: if the original didn't show the screen or call
+          // the bind function, handle it ourselves.
+          if(!_origCalledBind){
+            console.log("[bank-feeds patch] Fallback: handling screen manually");
+
+            // Ensure the screen element is visible
+            var screenEl = document.getElementById("screen-bank-feeds");
+            var isVisible = screenEl && screenEl.classList.contains("active");
+            if(!isVisible) showScreen("bank-feeds");
+
+            // Update nav + title
+            updateNavHighlight("bank-feeds");
+            updateScreenTitle("Cash & Banking - Live Bank Feeds");
+
+            // Ensure company data is loaded, then bind the screen
+            try {
+              if(typeof ensureCompanyDataLoaded === "function") await ensureCompanyDataLoaded();
+            } catch(e) { console.warn("[bank-feeds patch] company load failed:", e); }
+            try {
+              if(typeof window.bindBankFeedsScreen === "function"){
+                await window.bindBankFeedsScreen();
+              }
+            } catch(e) { console.error("[bank-feeds patch] bindBankFeedsScreen failed:", e); }
+          }
+
+          return;
+        }
+
+        // ── Intercept invoice-templates ──────────────────────
+        if(target === "invoice-templates"){
+          var _origCalledBindIT = false;
+          var _origBindIT = window.bindInvoiceTemplatesScreen;
+          if(typeof _origBindIT === "function"){
+            window.bindInvoiceTemplatesScreen = async function(){
+              _origCalledBindIT = true;
+              return _origBindIT.apply(this, arguments);
+            };
+          }
+
+          var _origSucceededIT = false;
+          try {
+            await _originalSwitchScreen.call(this, name, opts);
+            _origSucceededIT = true;
+          } catch(e) {
+            console.error("[invoice-templates patch] original switchScreen error:", e);
+          }
+
+          window.bindInvoiceTemplatesScreen = _origBindIT;
+
+          if(!_origCalledBindIT){
+            console.log("[invoice-templates patch] Fallback: handling screen manually");
+
+            var screenElIT = document.getElementById("screen-invoice-templates");
+            var isVisibleIT = screenElIT && screenElIT.classList.contains("active");
+            if(!isVisibleIT) showScreen("invoice-templates");
+
+            updateNavHighlight("invoice-templates");
+            updateScreenTitle("Invoice Templates & Customization");
+
+            try {
+              if(typeof ensureCompanyDataLoaded === "function") await ensureCompanyDataLoaded();
+            } catch(e) { console.warn("[invoice-templates patch] company load failed:", e); }
+            try {
+              if(typeof window.bindInvoiceTemplatesScreen === "function"){
+                await window.bindInvoiceTemplatesScreen();
+              }
+            } catch(e) { console.error("[invoice-templates patch] bindInvoiceTemplatesScreen failed:", e); }
+          }
+
+          return;
+        }
+
+        // ── All other screens: delegate to original ──────────
+        return _originalSwitchScreen.call(this, name, opts);
+      };
+
+      return true;
+    }
+
+    // ── 7. Run patches when ready ──────────────────────────────
+    function tryPatch(){
+      var policyOk = patchScreenPolicy();
+      var routesOk = patchAppScreenRoutes();
+      var switchOk = wrapSwitchScreen();
+      return policyOk && routesOk && switchOk;
+    }
+
+    if(!tryPatch()){
+      var _patchTries = 0;
+      var _patchIv = setInterval(function(){
+        if(tryPatch() || ++_patchTries > 100){ clearInterval(_patchIv); }
       }, 100);
     }
   })();
