@@ -6,6 +6,7 @@ import React, {
 } from "react";
 import { previewLease, createLease } from "../api/leases";
 import { apiFetch } from "../api/apiFetch";
+import { setToken } from "../api/authHeader";
 import {
   fetchCompanyCoa,
   type CoaAccount,
@@ -50,6 +51,21 @@ type LeaseCreateResponseWithVendor = LeaseCreateResponse & {
 type LessorsApiResponse =
   | LessorRow[]
   | { rows?: LessorRow[]; items?: LessorRow[]; lessors?: LessorRow[] };
+
+type BankAccount = {
+  id: number;
+  bank_name?: string;
+  account_name?: string;
+  account_number_masked?: string;
+  ledger_account_code?: string;
+};
+
+type BankAccountsApiResponse =
+  | BankAccount[]
+  | {
+      rows?: BankAccount[];
+      items?: BankAccount[];
+    };
 
 function normalizeLessorsResponse(data: LessorsApiResponse): LessorRow[] {
   if (Array.isArray(data)) return data;
@@ -397,7 +413,9 @@ async function fetchLessors(companyId: number): Promise<LessorRow[]> {
 
       if (!data?.token || !data?.companyId) return;
 
-      localStorage.setItem("auth_token", String(data.token));
+      // ✅ Security hardening: store the token in memory only
+      // via authHeader.ts setToken(). Do NOT write to localStorage.
+      setToken(String(data.token));
 
       setAuth({
         token: String(data.token),
@@ -593,18 +611,29 @@ async function fetchLessors(companyId: number): Promise<LessorRow[]> {
     }
   };
 
-  async function loadCompanyBankAccounts() {
+  async function loadCompanyBankAccounts(): Promise<void> {
     try {
       setLoadingBankAccounts(true);
-      const data = await apiFetch(`/api/companies/${companyId}/bank_accounts`, {
-        method: "GET",
-      });
 
-      const rows = Array.isArray(data) ? data : (data?.rows || data?.items || []);
+      const data = (await apiFetch(
+        `/api/companies/${companyId}/bank_accounts`,
+        { method: "GET" }
+      )) as BankAccountsApiResponse;
+
+      const rows: BankAccount[] = Array.isArray(data)
+        ? data
+        : data.rows || data.items || [];
+
       setBankAccounts(rows);
-    } catch (err) {
+
+    } catch (err: unknown) {
       console.error("Failed to load bank accounts", err);
-      setError(err instanceof Error ? err.message : "Failed to load bank accounts");
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load bank accounts"
+      );
     } finally {
       setLoadingBankAccounts(false);
     }

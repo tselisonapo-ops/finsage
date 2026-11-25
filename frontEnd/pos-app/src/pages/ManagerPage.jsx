@@ -176,18 +176,18 @@ export function ManagerPage() {
     String(company?.vat || "").trim()
   );
     
+  // ✅ Security hardening: read tokens from in-memory manager
   const fsToken =
-    sessionStorage.getItem("fs_user_token") ||
-    localStorage.getItem("fs_user_token") ||
-    "";
+    (typeof window.getFsToken === "function") ? window.getFsToken() :
+    (sessionStorage.getItem("fs_user_token") || "");
 
-  const posToken = localStorage.getItem("pos_token") || "";
+  const posToken = (typeof window.getPosToken === "function") ? window.getPosToken() : "";
   const [managerEmployee, setManagerEmployee] = useState(null);
 
   const hasActiveCompany =
     !!company?.id ||
-    !!localStorage.getItem("active_company_id") ||
-    !!localStorage.getItem("company_id");
+    !!sessionStorage.getItem("active_company_id") ||
+    !!sessionStorage.getItem("company_id");
 
   const mode = getPosMode(company);
 
@@ -256,7 +256,8 @@ export function ManagerPage() {
       const res = await posApi.posAuthMe();
       setManagerEmployee(res.employee || res.cashier || null);
     } catch {
-      localStorage.removeItem("pos_token");
+      // ✅ Clear POS token from memory
+      if (typeof window.clearPosToken === "function") window.clearPosToken();
       setManagerEmployee(null);
     }
   }
@@ -1134,7 +1135,7 @@ export function ManagerPage() {
     });
   }
 
-  const fsUser = JSON.parse(localStorage.getItem("fs_user") || "{}");
+  const fsUser = JSON.parse(sessionStorage.getItem("fs_user") || "{}");
 
   const managerRole = String(
     managerEmployee?.pos_role ||
@@ -1170,7 +1171,7 @@ export function ManagerPage() {
   }, [tab, allowedTabIds]);
 
   function goToMainSignin() {
-    localStorage.setItem(
+    sessionStorage.setItem(
       "fs:intended_url",
       `${window.location.pathname}${window.location.hash || "#/manager"}`
     );
@@ -1179,7 +1180,7 @@ export function ManagerPage() {
   }
 
   function goToCashierSignin() {
-    localStorage.setItem("pos_auth_required", "1");
+    sessionStorage.setItem("pos_auth_required", "1");
     window.location.href = "#/cashier";
   }
 

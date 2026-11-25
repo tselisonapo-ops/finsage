@@ -3,11 +3,12 @@ import { posApi } from "../services/posApi.js";
 import { money } from "../utils/currency.js";
 
 function getPosEmployee() {
-  return JSON.parse(localStorage.getItem("pos_employee") || "null");
+  // ✅ Security hardening: read from sessionStorage (not localStorage)
+  return JSON.parse(sessionStorage.getItem("pos_employee") || "null");
 }
 
 function getFsUser() {
-  return JSON.parse(localStorage.getItem("fs_user") || "{}");
+  return JSON.parse(sessionStorage.getItem("fs_user") || "{}");
 }
 
 function isManagerOrSupervisor() {

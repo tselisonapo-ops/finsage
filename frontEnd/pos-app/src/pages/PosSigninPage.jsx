@@ -20,12 +20,21 @@ export function PosSigninPage() {
         pin,
       });
 
-        const employee = res.employee || res.cashier || res.data?.employee;
-        const company = res.company || res.data?.company;
+      const employee = res.employee || res.cashier || res.data?.employee;
+      const company = res.company || res.data?.company;
 
-        localStorage.setItem("pos_token", res.pos_token || "");
-        localStorage.setItem("pos_employee", JSON.stringify(employee));
-        localStorage.setItem("pos_company", JSON.stringify(company));
+      // ✅ Security hardening: store POS token in memory only
+      // via posTokenManager.js. Do NOT write to localStorage.
+      if (typeof window.setPosToken === "function") {
+        window.setPosToken(res.pos_token || "");
+      } else {
+        // Legacy fallback
+        sessionStorage.setItem("pos_token", res.pos_token || "");
+      }
+
+      // Employee/company metadata is NOT sensitive — sessionStorage
+      sessionStorage.setItem("pos_employee", JSON.stringify(employee));
+      sessionStorage.setItem("pos_company", JSON.stringify(company));
 
       const industry = String(company?.industry || company?.industry_slug || "").toLowerCase();
 
@@ -44,9 +53,9 @@ export function PosSigninPage() {
     }
   }
 
-    return (
+  return (
     <main className="signin-page">
-        <form className="signin-card" onSubmit={signIn}>
+      <form className="signin-card" onSubmit={signIn}>
         <h1>FinSage POS</h1>
 
         <p>Employee sign-in</p>
@@ -55,34 +64,34 @@ export function PosSigninPage() {
 
         <label>Employee ID</label>
         <input
-            className="scan-input"
-            value={employeeCode}
-            maxLength={5}
-            placeholder="4 or 5 digit ID"
-            onChange={(e) => setEmployeeCode(e.target.value.replace(/\D/g, ""))}
+          className="scan-input"
+          value={employeeCode}
+          maxLength={5}
+          placeholder="4 or 5 digit ID"
+          onChange={(e) => setEmployeeCode(e.target.value.replace(/\D/g, ""))}
         />
 
         <label>PIN / Password</label>
         <input
-            className="scan-input"
-            type="password"
-            value={pin}
-            placeholder="Enter PIN"
-            onChange={(e) => setPin(e.target.value)}
+          className="scan-input"
+          type="password"
+          value={pin}
+          placeholder="Enter PIN"
+          onChange={(e) => setPin(e.target.value)}
         />
 
         <button className="success" type="submit">
-            Sign In
+          Sign In
         </button>
 
         <button
-            type="button"
-            className="soft"
-            onClick={() => (window.location.href = "/signin.html")}
+          type="button"
+          className="soft"
+          onClick={() => (window.location.href = "/signin.html")}
         >
-            Main FinSage Sign In
+          Main FinSage Sign In
         </button>
-        </form>
+      </form>
     </main>
-    );
+  );
 }

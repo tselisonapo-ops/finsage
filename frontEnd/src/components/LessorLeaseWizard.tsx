@@ -568,7 +568,7 @@ useEffect(() => {
           {
             method: "GET",
           }
-        );
+        ) as CustomerResponse;
 
         if (!active) return;
 
@@ -690,7 +690,12 @@ useEffect(() => {
       const response = await apiFetch(
         `/api/companies/${companyId}/bank_accounts`,
         { method: "GET" }
-      );
+      ) as unknown as {
+        rows?: CompanyBankAccount[];
+        items?: CompanyBankAccount[];
+        banks?: CompanyBankAccount[];
+        bank_accounts?: CompanyBankAccount[];
+      } | CompanyBankAccount[];
 
       const rows: CompanyBankAccount[] = (
         Array.isArray(response)
@@ -4737,7 +4742,7 @@ useEffect(() => {
                                     `Lease ${directCostLeaseId}`),
                               }),
                             }
-                          );
+                          ) as unknown as { ok?: boolean; error?: string };
 
                           if (!res?.ok) {
                             throw new Error(

@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./app";
 import { apiFetch } from "./api/apiFetch";
+import { setToken } from "./api/authHeader";
 
 declare global {
   interface Window {
@@ -51,21 +52,25 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
 
   if (type && type !== "lease_wizard_context") return;
 
+  // ✅ Security hardening: store the access token in memory only
+  // (via authHeader.ts setToken). Do NOT write to localStorage or
+  // sessionStorage. The refresh token is managed by the parent
+  // dashboard's token_manager.js via an HTTP-only cookie.
   if (token) {
-    localStorage.setItem("fs_user_token", token);
-    sessionStorage.setItem("fs_user_token", token);
-    localStorage.setItem("auth_token", token);
-    sessionStorage.setItem("auth_token", token);
+    setToken(token);
   }
 
+  // company_id is not sensitive — it is safe to keep in sessionStorage
+  // for the wizard's lifetime. We use sessionStorage (not localStorage)
+  // so it is cleared when the wizard tab closes.
   if (companyId != null) {
-    localStorage.setItem("company_id", String(companyId));
-    localStorage.setItem("active_company_id", String(companyId));
+    sessionStorage.setItem("company_id", String(companyId));
     sessionStorage.setItem("active_company_id", String(companyId));
   }
 
+  // role is not sensitive metadata
   if (role) {
-    localStorage.setItem("userRole", role);
+    sessionStorage.setItem("userRole", role);
   }
 
   if (data.ctx) {

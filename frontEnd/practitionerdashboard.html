@@ -4721,43 +4721,25 @@
 </head>
 <body>
 
+<script src="token_manager.js"></script>
 <script>
-window.__STOP_REDIRECTS__ = true;
-
-window.safeRedirect = function (url, mode = "href") {
-  if (window.__STOP_REDIRECTS__) {
-    console.warn("[REDIRECT BLOCKED]", url, mode);
-    return;
-  }
-  if (mode === "replace") window.location.replace(url);
-  else window.location.href = url;
-};
-
-(function () {
-  const token =
-    localStorage.getItem("fs_user_token") ||
-    sessionStorage.getItem("fs_user_token") ||
-    localStorage.getItem("authToken") ||
-    sessionStorage.getItem("authToken");
-
-  if (!token) {
-    window.safeRedirect("signin.html", "replace");
+(async function () {
+  var ok = await window.bootstrapSession();
+  if (!ok) {
+    window.location.replace("signin.html?reason=session_expired");
     return;
   }
 
-  let user = null;
-  try {
-    user = JSON.parse(localStorage.getItem("fs_user") || "null");
-  } catch (_) {
-    user = null;
-  }
+  var user = {};
+  try { user = JSON.parse(localStorage.getItem("fs_user") || "null") || {}; }
+  catch (_) {}
 
-  const canPractitioner =
+  var canPractitioner =
     !!user?.dashboards?.practitioner ||
     localStorage.getItem("can_access_practitioner_dashboard") === "true";
 
   if (!canPractitioner) {
-    window.safeRedirect("dashboard.html", "replace");
+    window.location.replace("dashboard.html");
   }
 })();
 </script>
@@ -10414,6 +10396,7 @@ window.safeRedirect = function (url, mode = "href") {
 })();
 </script>
 
+<script src="token_manager.js"></script>
 <script src="practitionerdashboard.js" defer></script>
 </body>
 </html>

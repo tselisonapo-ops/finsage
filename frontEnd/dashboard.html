@@ -66,36 +66,30 @@
   <link rel="icon" type="image/png" href="./assets/favicon.png">
 
 
-<!-- ✅ ORIGINAL production auth guard restored (v3): redirect to signin if no token -->
-<!-- ✅ Redirect to signin if no token -->
+<!-- ✅ Security hardening: token_manager.js replaces localStorage token
+     storage with an in-memory access token + HTTP-only refresh cookie.
+     Loaded BEFORE dashboard.js so apiFetch is available everywhere. -->
+<script src="token_manager.js"></script>
 <script>
-(function(){
-  const token=
-    localStorage.getItem("fs_user_token")||
-    sessionStorage.getItem("fs_user_token");
-
-  const path=window.location.pathname;
-
-  const isLiveApp=
-    path==="/app"||
-    path.startsWith("/app/");
-
-  const base=isLiveApp?"/app":"";
-
-  const publicPages=[
-    `${base}/signin.html`,
-    `${base}/registration.html`,
-    `${base}/forgot-password.html`,
-    `${base}/reset-password.html`
+// New auth guard: instead of checking localStorage for a token,
+// we call bootstrapSession() which exchanges the HTTP-only refresh
+// cookie for a fresh access token. If that fails, redirect to signin.
+(async function () {
+  var path = window.location.pathname;
+  var isLiveApp = (path === "/app" || path.indexOf("/app/") === 0);
+  var base = isLiveApp ? "/app" : "";
+  var publicPages = [
+    base + "/signin.html",
+    base + "/registration.html",
+    base + "/forgot-password.html",
+    base + "/reset-password.html"
   ];
+  var isPublicPage = publicPages.indexOf(path) >= 0;
+  if (isPublicPage) return;  // don't bootstrap on public pages
 
-  const isPublicPage=
-    publicPages.includes(path);
-
-  if(!token&&!isPublicPage){
-    window.location.replace(
-      `${base}/signin.html?reason=signed_out`
-    );
+  var ok = await window.bootstrapSession();
+  if (!ok) {
+    window.location.replace(base + "/signin.html?reason=session_expired");
   }
 })();
 </script>

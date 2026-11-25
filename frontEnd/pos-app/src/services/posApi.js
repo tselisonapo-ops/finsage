@@ -1,5 +1,5 @@
 import { getJson, postJson, patchJson } from "../api.js";
-import { getCompanyId } from "../config.js";
+import { getCompanyId, getPosToken } from "../config.js";
 
 function base(companyId = getCompanyId()) {
   if (!companyId) throw new Error("No active company selected.");
@@ -7,7 +7,8 @@ function base(companyId = getCompanyId()) {
 }
 
 function posHeaders() {
-  const token = localStorage.getItem("pos_token");
+  // ✅ Security hardening: read POS token from in-memory manager
+  const token = getPosToken();
 
   return token
     ? { Authorization: `Bearer ${token}` }

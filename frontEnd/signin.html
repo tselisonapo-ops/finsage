@@ -979,10 +979,18 @@
     }
 
     // Store tokens only after the OTP endpoint has verified the code.
-    localStorage.setItem("fs_user_token", data.token);
-    sessionStorage.setItem("fs_user_token", data.token);
-    localStorage.setItem("authToken", data.token);
-    sessionStorage.setItem("authToken", data.token);
+    // ✅ Security hardening: do NOT store the access token in
+    // localStorage or sessionStorage. The access token lives
+    // in memory only (window.setToken from token_manager.js).
+    // The refresh token is delivered via an HTTP-only cookie
+    // that the backend sets on this response — JavaScript
+    // cannot read it.
+    if (window.setToken) {
+      window.setToken(data.token);
+    } else {
+      // Fallback if token_manager.js is somehow not loaded
+      sessionStorage.setItem("fs_user_token", data.token);
+    }
 
     localStorage.setItem("userEmail", user.email || fallbackEmail);
 
@@ -1429,88 +1437,48 @@
   });
 </script>
 
+<!-- ✅ Security hardening: load token_manager.js and use cookie-based
+     session recovery instead of localStorage token check. -->
+<script src="token_manager.js"></script>
 <script>
-window.__STOP_REDIRECTS__ = true;
-
-window.safeRedirect = function (url, mode = "href") {
-  if (window.__STOP_REDIRECTS__) {
-    console.warn("[REDIRECT BLOCKED]", url, mode);
-    return;
-  }
-  if (mode === "replace") window.location.replace(url);
-  else window.location.href = url;
-};
-
-(function () {
-  const TOKEN_KEY = "fs_user_token";
-
-  const token =
-    sessionStorage.getItem(TOKEN_KEY) ||
-    localStorage.getItem(TOKEN_KEY) ||
-    sessionStorage.getItem("authToken") ||
-    localStorage.getItem("authToken") ||
-    "";
-
-  if (!token) {
-    if (!window.location.pathname.includes("signin")) {
-      window.safeRedirect("/signin.html", "replace");
-    }
-    return;
+// On the signin page, if the user already has a valid refresh
+// cookie, exchange it for a fresh access token and redirect to
+// the appropriate dashboard. This replaces the old localStorage
+// token check.
+(async function () {
+  // Don't redirect if we just arrived from a sign-out or session
+  // expiry — the URL will contain ?reason=signed_out or
+  // ?reason=session_expired.
+  var params = new URLSearchParams(window.location.search);
+  var reason = params.get("reason") || "";
+  if (reason === "signed_out" || reason === "session_expired") {
+    return;  // stay on signin page
   }
 
-  let payload = null;
   try {
-    const parts = String(token).split(".");
-    if (parts.length >= 2) {
-      payload = JSON.parse(atob(parts[1]));
-    }
-  } catch (e) {
-    console.warn("signin bootstrap: token decode failed", e);
-  }
+    var ok = await window.bootstrapSession();
+    if (ok) {
+      // We have a valid session — redirect to the dashboard.
+      var user = {};
+      try { user = JSON.parse(localStorage.getItem("fs_user") || "{}"); } catch (_) {}
 
-  let user = null;
-  try {
-    user = JSON.parse(localStorage.getItem("fs_user") || "null");
+      var canEnterprise = !!user.dashboards?.enterprise ||
+        localStorage.getItem("can_access_enterprise_dashboard") === "true";
+      var canPractitioner = !!user.dashboards?.practitioner ||
+        localStorage.getItem("can_access_practitioner_dashboard") === "true";
+      var scope = String(user.access_scope || "").toLowerCase();
+
+      var target = "dashboard.html";
+      if (canPractitioner && !canEnterprise) {
+        target = "practitionerdashboard.html";
+      } else if (canEnterprise && canPractitioner && scope === "assignment") {
+        target = "practitionerdashboard.html";
+      }
+
+      window.location.replace(target);
+    }
   } catch (_) {
-    user = null;
-  }
-
-  const accessScope = String(
-    payload?.access_scope ||
-    user?.access_scope ||
-    ""
-  ).toLowerCase();
-
-  const isDelegated =
-    !!payload?.is_delegated_company_access ||
-    accessScope === "delegated_workspace";
-
-  // ✅ NEW: School accounts (user_type "School") always route to the
-  // enterprise dashboard when revisiting signin while already signed in.
-  const schoolUserType = String(
-    payload?.user_type ||
-    user?.user_type ||
-    localStorage.getItem("userType") ||
-    ""
-  ).trim().toLowerCase();
-  const isSchool = schoolUserType === "school";
-
-  const canEnterprise =
-    isDelegated ||
-    isSchool ||
-    !!payload?.permissions?.can_access_enterprise_dashboard ||
-    !!user?.dashboards?.enterprise ||
-    localStorage.getItem("can_access_enterprise_dashboard") === "true";
-
-  if (isDelegated || canEnterprise) {
-    if (!window.location.pathname.includes("dashboard.html")) {
-      window.safeRedirect("/dashboard.html", "replace");
-    }
-    return;
-  }
-
-  if (!window.location.pathname.includes("practitionerdashboard.html")) {
-    window.safeRedirect("/practitionerdashboard.html", "replace");
+    // No valid session — stay on signin page.
   }
 })();
 </script>

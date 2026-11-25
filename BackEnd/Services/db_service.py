@@ -84679,6 +84679,7 @@ class DatabaseService:
             cur=cur,
         )
 
+
     def _lessor_release_underlying_asset(
         self,
         company_id: int,
@@ -84687,13 +84688,19 @@ class DatabaseService:
         cur=None,
     ) -> bool:
         """
-        Release the underlying asset of a just-reversed lessor lease.
+        Confirm release of the underlying asset after a lessor lease reversal.
 
-        The lease row itself is NOT modified (history preserved). The asset
-        is only touched when NO other non-reversed lease still references
-        it, and it is never resurrected from disposed/held_for_sale.
+        The lease row and its commencement journal reference are preserved
+        for audit history. The asset is touched only when:
+        - the specified lease is actually reversed;
+        - the asset is not disposed or held for sale; and
+        - no other active lessor lease references the asset.
 
-        Returns True when the asset row was released.
+        Asset availability is determined by the lessor lease records.
+        This function does not alter the asset's carrying amount,
+        accumulated depreciation, or accounting classification.
+
+        Returns True when the asset was eligible for release.
         """
         schema = self.company_schema(company_id)
 
@@ -84703,18 +84710,20 @@ class DatabaseService:
             SET updated_at = NOW()
             FROM {schema}.lessor_leases ll
             WHERE ll.company_id = a.company_id
-              AND ll.id = %s
-              AND a.id = ll.asset_id
-              AND COALESCE(a.status,'active')
-                  NOT IN ('disposed','held_for_sale')
-              AND NOT EXISTS (
+            AND ll.id = %s
+            AND ll.status = 'reversed'
+            AND a.id = ll.asset_id
+            AND COALESCE(a.status, 'active')
+                NOT IN ('disposed', 'held_for_sale')
+            AND NOT EXISTS (
                     SELECT 1
                     FROM {schema}.lessor_leases other
                     WHERE other.company_id = a.company_id
-                      AND other.asset_id  = a.id
-                      AND other.id       <> ll.id
-                      AND other.status NOT IN ('reversed','cancelled')
-              )
+                    AND other.asset_id = a.id
+                    AND other.id <> ll.id
+                    AND COALESCE(other.status, 'active')
+                        NOT IN ('reversed', 'cancelled')
+            )
             RETURNING a.id;
             """,
             (int(lessor_lease_id),),
@@ -126215,6 +126224,49 @@ class DatabaseService:
               AND ll.commencement_journal_id IS NOT NULL
         ),
 
+
+        lessor_restoration_rows AS (
+            SELECT
+                ld.company_id,
+                ld.asset_id,
+                ld.asset_code,
+                ld.asset_name,
+                ld.asset_class,
+                ld.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
+                rev.date AS event_date,
+
+                'lease_reversal_restoration'::text AS movement_type,
+                'lessor_lease_reversals'::text AS source_table,
+                rev.id::bigint AS source_id,
+
+                ld.measurement_basis,
+                CONCAT(
+                    'Finance lease reversal: ',
+                    ll.contract_name
+                )::text AS narrative,
+
+                (-ld.cost_delta)::numeric(18,2) AS cost_delta,
+                (-ld.accum_dep_delta)::numeric(18,2) AS accum_dep_delta,
+                (-ld.impairment_delta)::numeric(18,2) AS impairment_delta,
+                (-ld.revaluation_reserve_delta)::numeric(18,2)
+                    AS revaluation_reserve_delta,
+
+                (-ld.carrying_delta)::numeric(18,2) AS carrying_delta
+
+            FROM lessor_derecognition_rows ld
+            JOIN {schema}.lessor_leases ll
+              ON ll.id = ld.source_id
+             AND ll.company_id = ld.company_id
+            JOIN {schema}.journal original
+              ON original.id = ll.commencement_journal_id
+             AND original.company_id = ll.company_id
+            JOIN {schema}.journal rev
+              ON rev.reversal_of_journal_id = original.id
+             AND rev.company_id = original.company_id
+        ),
+
         reserve_rows AS (
             SELECT
                 a.company_id,
@@ -126259,6 +126311,7 @@ class DatabaseService:
             UNION ALL SELECT * FROM transfer_rows
             UNION ALL SELECT * FROM standard_transfer_rows
             UNION ALL SELECT * FROM lessor_derecognition_rows
+            UNION ALL SELECT * FROM lessor_restoration_rows
             UNION ALL SELECT * FROM reserve_rows
         ) m
         WHERE EXISTS (

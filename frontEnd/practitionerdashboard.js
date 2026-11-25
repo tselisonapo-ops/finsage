@@ -1,5 +1,8 @@
 
 (function hardBootstrapTokenHelpers() {
+  // If token_manager.js is already loaded, skip this block.
+  if (window.__FS_TOKEN_MANAGER_LOADED__) return;
+
   const TOKEN_KEY = "fs_user_token";
 
   window.getToken = function () {
@@ -2060,88 +2063,95 @@ function ensurePostingScreensHydrated() {
 /* ======================================================
   * Helpers
   * ==================================================== */
-function AUTH_HEADER() {
-  const token = window.getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-function getAuthToken() {
-  return (
-    localStorage.getItem("fs_user_token") ||
-    sessionStorage.getItem("fs_user_token") ||
-    ""
-  );
-}
-
-function getStoredUser() {
-  try {
-    return JSON.parse(localStorage.getItem("fs_user") || "null") || {};
-  } catch (_) {
-    return {};
-  }
-}
-
-async function apiFetch(url, options = {}) {
-  const token = getAuthToken();
-
-  let res;
-  try {
-    res = await fetch(url, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.headers || {})
-      }
-    });
-  } catch (err) {
-    throw new Error(err?.message || "Network request failed");
+if (!window.__FS_TOKEN_MANAGER_LOADED__) {
+  function AUTH_HEADER() {
+    const token = window.getToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
-  const text = await res.text();
-  let json = null;
-
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch (_) {
-    json = null;
+  function getAuthToken() {
+    return (
+      localStorage.getItem("fs_user_token") ||
+      sessionStorage.getItem("fs_user_token") ||
+      ""
+    );
   }
 
-  if (!res.ok) {
-    console.error("API ERROR DETAILS:", {
-      url,
-      status: res.status,
-      statusText: res.statusText,
-      responseText: text,
-      responseJson: json,
-    });
+  function getStoredUser() {
+    try {
+      return JSON.parse(localStorage.getItem("fs_user") || "null") || {};
+    } catch (_) {
+      return {};
+    }
+  }
 
-    let detail = "";
+  async function apiFetch(url, options = {}) {
+    const token = getAuthToken();
 
-    if (typeof json?.error === "string") {
-      detail = json.error;
-    } else if (json?.error?.message) {
-      detail = json.error.message;
-
-      if (Array.isArray(json.error.missing_fields)) {
-        detail += ` Missing: ${json.error.missing_fields.join(", ")}`;
-      }
-    } else if (json?.message) {
-      detail = json.message;
-    } else if (json?.detail) {
-      detail = json.detail;
-    } else if (text) {
-      detail = text;
-    } else {
-      detail = `${res.status} ${res.statusText}` || "Request failed";
+    let res;
+    try {
+      res = await fetch(url, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(options.headers || {})
+        }
+      });
+    } catch (err) {
+      throw new Error(err?.message || "Network request failed");
     }
 
-    throw new Error(detail);
-  }
+    const text = await res.text();
+    let json = null;
 
-  return json;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch (_) {
+      json = null;
+    }
+
+    if (!res.ok) {
+      console.error("API ERROR DETAILS:", {
+        url,
+        status: res.status,
+        statusText: res.statusText,
+        responseText: text,
+        responseJson: json,
+      });
+
+      let detail = "";
+
+      if (typeof json?.error === "string") {
+        detail = json.error;
+      } else if (json?.error?.message) {
+        detail = json.error.message;
+
+        if (Array.isArray(json.error.missing_fields)) {
+          detail += ` Missing: ${json.error.missing_fields.join(", ")}`;
+        }
+      } else if (json?.message) {
+        detail = json.message;
+      } else if (json?.detail) {
+        detail = json.detail;
+      } else if (text) {
+        detail = text;
+      } else {
+        detail = `${res.status} ${res.statusText}` || "Request failed";
+      }
+
+      throw new Error(detail);
+    }
+
+    return json;
+  }
+  window.apiFetch = apiFetch;
+} else {
+  window.AUTH_HEADER = function () {
+    var t = window.getToken();
+    return t ? { Authorization: "Bearer " + t } : {};
+  };
 }
-window.apiFetch = apiFetch;
 
 function buildApiUrl(baseUrl, params = {}) {
   const url = new URL(baseUrl, window.location.origin);
@@ -3538,11 +3548,14 @@ async function switchCompany(companyId) {
     body: JSON.stringify({ company_id: companyId }),
   });
 
+  // ✅ Security hardening: store the delegated access token in
+  // memory only (token_manager.js).
   if (out?.token) {
-    localStorage.setItem("fs_user_token", out.token);
-    sessionStorage.setItem("fs_user_token", out.token);
-    localStorage.setItem("authToken", out.token);
-    sessionStorage.setItem("authToken", out.token);
+    if (window.setToken) {
+      window.setToken(out.token);
+    } else {
+      sessionStorage.setItem("fs_user_token", out.token);
+    }
   }
 
   const current = getStoredUser();
@@ -11569,7 +11582,16 @@ async function bindDeliverablesScreen(me) {
 // SIGN OUT + SETTINGS FOR PRACTITIONER DASHBOARD
 // ============================================================
 
-function prSignOut() {
+async function prSignOut() {
+  // ✅ Security hardening: call the server logout endpoint to
+  // revoke the refresh-token cookie, then clear the in-memory
+  // access token and redirect.
+  if (typeof window.performFullLogout === "function") {
+    await window.performFullLogout();
+    return;
+  }
+
+  // Legacy fallback
   if (typeof window.clearToken === "function") {
     window.clearToken();
   }

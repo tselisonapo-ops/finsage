@@ -79,7 +79,10 @@ def make_jwt(
         "is_native_company_member": bool(is_native_company_member),
 
         "iat": int(now.timestamp()),
-        "exp": datetime.now(timezone.utc) + timedelta(hours=8),
+        # Short-lived access token — refreshed every ~10 min by
+        # the client via the HTTP-only refresh-token cookie.
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
+        "typ": "access",
     }
 
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -571,3 +574,168 @@ def login_user(email: str, password: str) -> Tuple[Optional[Dict[str, Any]], Opt
         company_id=user.get("company_id"),   # ✅ add
     )
     return user, token
+
+
+# ============================================================
+# REFRESH TOKEN INTEGRATION
+# ============================================================
+#
+# Access tokens are now short-lived (15 min). To keep users
+# logged in, a separate opaque refresh token is issued and
+# stored in an HTTP-only cookie. The client calls
+# /api/auth/refresh every 10 minutes (and on page load) to
+# exchange the cookie for a fresh access token.
+#
+# The refresh-token logic lives in refresh_token_service.py
+# so it can be unit-tested independently.
+# ============================================================
+
+from BackEnd.Services.refresh_token_service import (  # noqa: E402
+    ACCESS_TOKEN_TTL_MINUTES,
+    REFRESH_TOKEN_TTL_DAYS,
+    ensure_refresh_schema,
+    issue_refresh_token as _issue_refresh_token,
+    verify_refresh_token as _verify_refresh_token,
+    revoke_refresh_token as _revoke_refresh_token,
+    revoke_all_user_tokens as _revoke_all_user_tokens,
+    set_refresh_cookie as _set_refresh_cookie,
+    clear_refresh_cookie as _clear_refresh_cookie,
+    read_refresh_cookie as _read_refresh_cookie,
+    COOKIE_NAME as REFRESH_COOKIE_NAME,
+)
+
+
+def issue_refresh_token(db_service, *, user_id, product="finsage",
+                        user_agent=None, ip_address=None):
+    """Create a new refresh token row and return the raw cookie value."""
+    return _issue_refresh_token(
+        db_service,
+        user_id=user_id,
+        product=product,
+        user_agent=user_agent,
+        ip_address=ip_address,
+    )
+
+
+def verify_refresh_token(db_service, raw_token):
+    """Validate a refresh token; returns {user_id, expires_at, ...} or None."""
+    return _verify_refresh_token(db_service, raw_token)
+
+
+def revoke_refresh_token(db_service, raw_token):
+    """Revoke a single refresh token (used on sign-out)."""
+    return _revoke_refresh_token(db_service, raw_token)
+
+
+def revoke_all_user_tokens(db_service, user_id):
+    """Revoke every refresh token for a user (password change, breach)."""
+    return _revoke_all_user_tokens(db_service, user_id)
+
+
+def attach_refresh_cookie(response, raw_token):
+    """Set the HTTP-only refresh cookie on a Flask response."""
+    _set_refresh_cookie(response, raw_token)
+
+
+def clear_refresh_cookie(response):
+    """Delete the HTTP-only refresh cookie on a Flask response."""
+    _clear_refresh_cookie(response)
+
+
+def read_refresh_cookie(request):
+    """Read the raw refresh token from the incoming request cookie."""
+    return _read_refresh_cookie(request)
+
+
+def refresh_access_token(db_service, raw_refresh_token):
+    """
+    Given a valid refresh-token cookie value, produce a fresh
+    short-lived access JWT (with the same claim shape as make_jwt).
+
+    Returns dict {token, expires_in, user} on success,
+    or None if the refresh token is invalid/expired/revoked.
+    """
+    info = verify_refresh_token(db_service, raw_refresh_token)
+    if not info:
+        return None
+
+    user_id = info["user_id"]
+    user = db_service.get_user_by_id(user_id)
+    if not user or user.get("is_active") is False:
+        return None
+
+    base_role = str(user.get("user_role") or "viewer").strip()
+    user_type = str(user.get("user_type") or "Enterprise").strip()
+
+    memberships = db_service.fetch_all(
+        """
+        SELECT company_id, role, access_scope, is_primary, membership_kind
+        FROM public.company_users
+        WHERE user_id=%s AND is_active=TRUE
+        ORDER BY company_id
+        """,
+        (user_id,),
+    ) or []
+
+    primary_mem = next(
+        (m for m in memberships if m.get("is_primary")),
+        (memberships[0] if memberships else None),
+    )
+
+    company_id = (
+        int(primary_mem["company_id"])
+        if primary_mem and primary_mem.get("company_id")
+        else None
+    )
+
+    from BackEnd.Services.company_context import normalize_role as _normalize_role
+
+    user_role = (
+        _normalize_role(primary_mem.get("role") or base_role)
+        if primary_mem else base_role
+    )
+    access_scope = (
+        str(primary_mem.get("access_scope") or "core").strip().lower()
+        if primary_mem else "core"
+    )
+
+    owned_rows = db_service.fetch_all(
+        """
+        SELECT id AS company_id
+        FROM public.companies
+        WHERE owner_user_id = %s
+        ORDER BY id
+        """,
+        (user_id,),
+    ) or []
+
+    allowed_company_ids = sorted({
+        int(r["company_id"]) for r in owned_rows if r.get("company_id")
+    } | ({company_id} if company_id else set()))
+
+    new_token = make_jwt(
+        user_id=user_id,
+        email=user["email"],
+        role=user_role,
+        user_type=user_type,
+        company_id=company_id,
+        access_scope=access_scope,
+        allowed_company_ids=allowed_company_ids,
+    )
+
+    return {
+        "token": new_token,
+        "expires_in": ACCESS_TOKEN_TTL_MINUTES * 60,
+        "user": {
+            "id": user_id,
+            "email": user["email"],
+            "role": user_role,
+            "user_type": user_type,
+            "company_id": company_id,
+            "access_scope": access_scope,
+            "allowed_company_ids": allowed_company_ids,
+            "otp_enabled": bool(user.get("otp_enabled", True)),
+            "session_lock_enabled": bool(user.get("session_lock_enabled", True)),
+            "idle_lock_minutes": int(user.get("idle_lock_minutes") or 10),
+        },
+    }

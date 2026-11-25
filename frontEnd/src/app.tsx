@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import LeasePage from "./leasePage";
 import { getWizardCompanyId } from "./context/company";
+import { setToken, getToken } from "./api/authHeader";
 
 type ActiveTool = "ifrs16_new" | "ifrs16_existing";
 type LeaseRole = "lessee" | "lessor";
@@ -136,25 +137,10 @@ function App() {
         data.companyId;
 
       if (token) {
-        localStorage.setItem(
-          "fs_user_token",
-          token
-        );
-
-        sessionStorage.setItem(
-          "fs_user_token",
-          token
-        );
-
-        localStorage.setItem(
-          "auth_token",
-          token
-        );
-
-        sessionStorage.setItem(
-          "auth_token",
-          token
-        );
+        // ✅ Security hardening: store the access token in memory
+        // only via authHeader.ts setToken(). Do NOT write to
+        // localStorage or sessionStorage.
+        setToken(token);
       }
 
       if (incomingCompanyId != null) {
@@ -162,17 +148,13 @@ function App() {
           incomingCompanyId
         );
 
-        localStorage.setItem(
-          "active_company_id",
-          String(cid)
-        );
-
+        // company_id is not sensitive — sessionStorage only
         sessionStorage.setItem(
           "active_company_id",
           String(cid)
         );
 
-        localStorage.setItem(
+        sessionStorage.setItem(
           "company_id",
           String(cid)
         );
@@ -181,7 +163,8 @@ function App() {
       }
 
       if (data.role) {
-        localStorage.setItem(
+        // role is not sensitive metadata — sessionStorage only
+        sessionStorage.setItem(
           "userRole",
           data.role
         );
@@ -259,13 +242,34 @@ function App() {
     const productionOrigin =
       "https://finspheresolutions.com";
 
-    const token =
-      localStorage.getItem(
-        "fs_user_token"
-      ) ||
-      sessionStorage.getItem(
-        "fs_user_token"
-      );
+    // ✅ Security hardening: async IIFE to check in-memory token
+    // and try /api/auth/refresh before redirecting.
+    (async () => {
+    let token = getToken();
+
+    if (!token) {
+      // Try to refresh via the HTTP-only cookie
+      try {
+        const refreshUrl = isLocal
+          ? "http://localhost:5000/api/auth/refresh"
+          : `${productionOrigin}/api/auth/refresh`;
+        const refreshRes = await fetch(refreshUrl, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          if (refreshData.token) {
+            setToken(refreshData.token);
+            token = refreshData.token;
+          }
+        }
+      } catch {
+        // Refresh failed — will redirect below
+      }
+    }
 
     const redirectUrl = !token
       ? isLocal
@@ -286,9 +290,12 @@ function App() {
       3000
     );
 
+    // Return cleanup inside the async IIFE — the outer useEffect
+    // returns undefined, but the timeout is cleared here.
     return () => {
       window.clearTimeout(timeoutId);
     };
+    })(); // close async IIFE
   }, [companyId]);
 
   if (!companyId) {

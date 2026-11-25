@@ -10,12 +10,21 @@ import { ManagerPage } from "./pages/ManagerPage.jsx";
 import { ReturnsPage } from "./pages/ReturnsPage.jsx";
 import { PosSigninPage } from "./pages/PosSigninPage.jsx";
 
+// ✅ Security hardening: tokens are now in memory via posTokenManager.js
+// (loaded in index.html before this bundle). No localStorage reads.
 function getFsToken() {
-  return (
-    sessionStorage.getItem("fs_user_token") ||
-    localStorage.getItem("fs_user_token") ||
-    ""
-  );
+  if (typeof window !== "undefined" && typeof window.getFsToken === "function") {
+    return window.getFsToken();
+  }
+  // Legacy fallback during migration
+  return sessionStorage.getItem("fs_user_token") || "";
+}
+
+function getPosToken() {
+  if (typeof window !== "undefined" && typeof window.getPosToken === "function") {
+    return window.getPosToken();
+  }
+  return sessionStorage.getItem("pos_token") || "";
 }
 
 export function App() {
@@ -47,37 +56,24 @@ export function App() {
       if (data.type !== "fs_pos_context") return;
       if (!data.token || !data.companyId) return;
 
-      sessionStorage.setItem("fs_user_token", data.token);
-      localStorage.setItem("fs_user_token", data.token);
-      localStorage.setItem("authToken", data.token);
+      // ✅ Security hardening: store the token in memory only via
+      // posTokenManager.js. Do NOT write to localStorage or sessionStorage.
+      if (typeof window.setFsToken === "function") {
+        window.setFsToken(data.token);
+      } else {
+        // Legacy fallback during migration
+        sessionStorage.setItem("fs_user_token", data.token);
+      }
 
-      localStorage.setItem(
-        "active_company",
-        JSON.stringify(data.company || {})
-      );
-
-      localStorage.setItem(
-        "pos_company",
-        JSON.stringify(data.company || {})
-      );
-
-      localStorage.setItem(
-        "active_company_id",
-        String(data.companyId)
-      );
-
-      localStorage.setItem(
-        "pos_company_id",
-        String(data.companyId)
-      );
-
-      localStorage.setItem(
-        "company_id",
-        String(data.companyId)
-      );
+      // Company metadata is NOT sensitive — sessionStorage only
+      sessionStorage.setItem("active_company", JSON.stringify(data.company || {}));
+      sessionStorage.setItem("pos_company", JSON.stringify(data.company || {}));
+      sessionStorage.setItem("active_company_id", String(data.companyId));
+      sessionStorage.setItem("pos_company_id", String(data.companyId));
+      sessionStorage.setItem("company_id", String(data.companyId));
 
       if (data.user && typeof data.user === "object") {
-        localStorage.setItem("fs_user", JSON.stringify(data.user));
+        sessionStorage.setItem("fs_user", JSON.stringify(data.user));
       }
 
       setHostContextChecked(true);
@@ -97,6 +93,15 @@ export function App() {
       );
     }
 
+    // ✅ Try to bootstrap session via HTTP-only refresh cookie
+    if (!getFsToken() && typeof window.bootstrapPosSession === "function") {
+      window.bootstrapPosSession().then(function (ok) {
+        if (ok) {
+          setHostContextChecked(true);
+        }
+      });
+    }
+
     const timeout = setTimeout(() => {
       setHostContextChecked(true);
     }, 1500);
@@ -108,19 +113,8 @@ export function App() {
   }, []);
 
   const fsToken = getFsToken();
-  const posEmployee = JSON.parse(localStorage.getItem("pos_employee") || "null");
-  const posToken = localStorage.getItem("pos_token") || "";
-
-  console.log("[POS AUTH]", {
-    host: window.location.origin,
-    hash: window.location.hash,
-    fsToken,
-    sessionToken: sessionStorage.getItem("fs_user_token"),
-    localToken: localStorage.getItem("fs_user_token"),
-    authToken: localStorage.getItem("authToken"),
-    posToken,
-    posEmployee,
-  });
+  const posEmployee = JSON.parse(sessionStorage.getItem("pos_employee") || "null");
+  const posToken = getPosToken();
 
   if (route.startsWith("#/signin")) return <PosSigninPage />;
 

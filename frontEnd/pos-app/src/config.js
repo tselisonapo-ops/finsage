@@ -10,9 +10,11 @@ export function getCompanyContext() {
     if (src && typeof src === "object" && src.id) return src;
   }
 
+  // ✅ Security hardening: read from sessionStorage (not localStorage).
+  // company metadata is not sensitive, but we minimise persisted data.
   for (const key of ["active_company", "pos_company"]) {
     try {
-      const company = JSON.parse(localStorage.getItem(key) || "{}");
+      const company = JSON.parse(sessionStorage.getItem(key) || "{}");
       if (company && typeof company === "object" && company.id) return company;
     } catch {}
   }
@@ -29,19 +31,30 @@ export function getCompanyId() {
   return Number(
     company?.id ||
     params.get("company_id") ||
-    localStorage.getItem("active_company_id") ||
+    sessionStorage.getItem("active_company_id") ||
+    sessionStorage.getItem("company_id") ||
     0
   );
 }
 
 export function getAuthToken() {
-  return (
-    sessionStorage.getItem("fs_user_token") ||
-    localStorage.getItem("fs_user_token") ||
-    localStorage.getItem("authToken") ||
-    localStorage.getItem("token") ||
-    ""
-  );
+  // ✅ Security hardening: read from in-memory token manager.
+  // Falls back to sessionStorage only during the migration period.
+  if (typeof window !== "undefined" && typeof window.getFsToken === "function") {
+    const token = window.getFsToken();
+    if (token) return token;
+  }
+  // Legacy fallback (will be removed after full migration)
+  return sessionStorage.getItem("fs_user_token") || "";
+}
+
+export function getPosToken() {
+  // ✅ Security hardening: read POS token from in-memory manager.
+  if (typeof window !== "undefined" && typeof window.getPosToken === "function") {
+    return window.getPosToken();
+  }
+  // Legacy fallback
+  return sessionStorage.getItem("pos_token") || "";
 }
 
 export function getPosMode(company = getCompanyContext()) {

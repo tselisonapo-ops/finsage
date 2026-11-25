@@ -81,6 +81,13 @@ function getSigninUrl(reason=""){
 
 // ====== HARD BOOTSTRAP (must be outside the IIFE) ======
 (function hardBootstrapTokenHelpers() {
+  // If token_manager.js is already loaded, it has already defined
+  // window.getToken / setToken / clearToken using in-memory storage
+  // + HTTP-only refresh cookie. Skip this entire block.
+  if (window.__FS_TOKEN_MANAGER_LOADED__) {
+    return;
+  }
+
   const TOKEN_KEY = "fs_user_token";
   const ACTIVE_COMPANY_TOKEN_KEY = "fs_active_company_token";
 
@@ -358,241 +365,259 @@ window.addEventListener("unhandledrejection", (e) => {
     };
   }
 
-  function AUTH_HEADER() {
-    const token = window.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }
-
-  window.toApiUrl = function toApiUrl(url) {
-      if (!url) throw new Error("toApiUrl: url is missing");
-
-      if (/^https?:\/\//i.test(url)) return url;
-
-      if (url.startsWith("/")) return API_BASE + url;
-
-      return API_BASE + "/" + url;
-  };
-
- // ✅ ONE global apiFetch only
-  window.apiFetch = async function apiFetch(url, options = {}) {
-    if (!url) throw new Error("apiFetch called with empty/undefined url");
-
-    const locked = sessionStorage.getItem("fs_session_locked") === "1";
-    const allowWhenLocked = options._allowWhenLocked === true;
-
-    if (locked && !allowWhenLocked) {
-      showSessionLockModal?.();
-      const err = new Error("SESSION_LOCKED");
-      err.status = 423;
-      throw err;
+  // If token_manager.js is loaded, it already provides apiFetch with
+  // auto-refresh-on-401. Skip the legacy definitions.
+  if (!window.__FS_TOKEN_MANAGER_LOADED__) {
+    function AUTH_HEADER() {
+      const token = window.getToken();
+      return token ? { Authorization: `Bearer ${token}` } : {};
     }
 
-    const authObj = (typeof AUTH_HEADER === "function" ? AUTH_HEADER() : {}) || {};
-    const isFormData = options.body instanceof FormData;
+    window.toApiUrl = function toApiUrl(url) {
+        if (!url) throw new Error("toApiUrl: url is missing");
 
-    const headers = new Headers();
+        if (/^https?:\/\//i.test(url)) return url;
 
-    if (options.headers) {
-      const h = options.headers;
-      if (h instanceof Headers) h.forEach((v, k) => headers.set(k, v));
-      else Object.entries(h).forEach(([k, v]) => v != null && headers.set(k, String(v)));
-    }
+        if (url.startsWith("/")) return API_BASE + url;
 
-    if (!isFormData && options.body && !headers.has("Content-Type")) {
-      headers.set("Content-Type", "application/json");
-    }
-
-    Object.entries(authObj).forEach(([k, v]) => {
-      if (v != null && String(v).trim() !== "") headers.set(k, String(v));
-    });
-
-    // ----------------------------------
-    // 🔥 Delegated posting context headers
-    // ----------------------------------
-    const finalUrl = toApiUrl(url);
-
-    try {
-      const postingCtx = JSON.parse(localStorage.getItem("fs_posting_context") || "null");
-
-      if (postingCtx?.engagementId) {
-        headers.set("X-FS-Engagement-Id", String(postingCtx.engagementId));
-      }
-      if (postingCtx?.sourceCompanyId) {
-        headers.set("X-FS-Source-Company-Id", String(postingCtx.sourceCompanyId));
-      }
-      if (postingCtx?.targetCompanyId) {
-        headers.set("X-FS-Target-Company-Id", String(postingCtx.targetCompanyId));
-      }
-
-      if (finalUrl.includes("/revenue/contracts")) {
-        console.log("[REVENUE AUTH CHECK]", {
-          url: finalUrl,
-          authHeaderPresent: headers.has("Authorization"),
-          authHeaderIsBearer: /^Bearer\s+\S+$/i.test(
-            headers.get("Authorization") || ""
-          )
-        });
-      }
-    } catch (e) {
-      console.warn("Failed to attach posting context headers", e);
-    }
-
-    // -------------------------
-    // helpers for review retry
-    // -------------------------
-    const parseCompanyIdFromUrl = (u) => {
-      const m = String(u || "").match(/\/api\/companies\/(\d+)\b/i);
-      return m ? Number(m[1]) : null;
+        return API_BASE + "/" + url;
     };
 
-    const canAutoApprovePpe = (companyId) => {
-      try {
-        const cid = FS?.control?.resolveCid?.(companyId) ?? companyId;
-        if (!cid) return false;
-        const roleRaw = (typeof getCurrentRole === "function" ? getCurrentRole() : "");
-        return !!FS?.policy?.canApprovePpe?.(roleRaw, cid);
-      } catch {
-        return false;
-      }
-    };
+   // ✅ ONE global apiFetch only
+    window.apiFetch = async function apiFetch(url, options = {}) {
+      if (!url) throw new Error("apiFetch called with empty/undefined url");
 
-    const normalizeApproveUrl = (approveUrl, cidFromRequest) => {
-      if (!approveUrl) return null;
+      const locked = sessionStorage.getItem("fs_session_locked") === "1";
+      const allowWhenLocked = options._allowWhenLocked === true;
 
-      // If backend returns full URL or already api/companies path, keep it.
-      const s = String(approveUrl);
-
-      // If it's already absolute-ish, toApiUrl will handle it.
-      if (s.includes("/api/companies/")) return s;
-
-      // If it's a relative approve path like "/depreciation/approve-post-batch"
-      // we try to prefix with /api/companies/<cid>
-      if (s.startsWith("/")) {
-        if (cidFromRequest) return `/api/companies/${cidFromRequest}${s}`;
-        return s; // fallback
+      if (locked && !allowWhenLocked) {
+        showSessionLockModal?.();
+        const err = new Error("SESSION_LOCKED");
+        err.status = 423;
+        throw err;
       }
 
-      // Otherwise assume it’s relative without leading slash
-      if (cidFromRequest) return `/api/companies/${cidFromRequest}/${s}`;
-      return s;
-    };
+      const authObj = (typeof AUTH_HEADER === "function" ? AUTH_HEADER() : {}) || {};
+      const isFormData = options.body instanceof FormData;
 
-    // Avoid infinite loops
-    const approveAttempted = options._fsApproveAttempt === true;
+      const headers = new Headers();
 
-    if (finalUrl.includes("/revenue/contracts")) {
-      console.log("[REVENUE FETCH CHECK]", {
-        url: finalUrl,
-        method: options.method || "GET",
-        authorizationPresent: headers.has("Authorization"),
-        authorizationLength: (headers.get("Authorization") || "").length
+      if (options.headers) {
+        const h = options.headers;
+        if (h instanceof Headers) h.forEach((v, k) => headers.set(k, v));
+        else Object.entries(h).forEach(([k, v]) => v != null && headers.set(k, String(v)));
+      }
+
+      if (!isFormData && options.body && !headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
+
+      Object.entries(authObj).forEach(([k, v]) => {
+        if (v != null && String(v).trim() !== "") headers.set(k, String(v));
       });
 
-      console.trace("[REVENUE FETCH CALLER]");
-    }
+      // ----------------------------------
+      // 🔥 Delegated posting context headers
+      // ----------------------------------
+      const finalUrl = toApiUrl(url);
 
-    const res = await fetch(finalUrl, { ...options, headers });
+      try {
+        const postingCtx = JSON.parse(localStorage.getItem("fs_posting_context") || "null");
 
-    const contentType = res.headers.get("Content-Type") || "";
-    const isJSON = contentType.includes("application/json");
+        if (postingCtx?.engagementId) {
+          headers.set("X-FS-Engagement-Id", String(postingCtx.engagementId));
+        }
+        if (postingCtx?.sourceCompanyId) {
+          headers.set("X-FS-Source-Company-Id", String(postingCtx.sourceCompanyId));
+        }
+        if (postingCtx?.targetCompanyId) {
+          headers.set("X-FS-Target-Company-Id", String(postingCtx.targetCompanyId));
+        }
 
-    let data = null;
+        if (finalUrl.includes("/revenue/contracts")) {
+          console.log("[REVENUE AUTH CHECK]", {
+            url: finalUrl,
+            authHeaderPresent: headers.has("Authorization"),
+            authHeaderIsBearer: /^Bearer\s+\S+$/i.test(
+              headers.get("Authorization") || ""
+            )
+          });
+        }
+      } catch (e) {
+        console.warn("Failed to attach posting context headers", e);
+      }
 
-    if (res.status !== 204) {
-      if (isJSON) {
-        const txt = await res.text().catch(() => "");
+      // -------------------------
+      // helpers for review retry
+      // -------------------------
+      const parseCompanyIdFromUrl = (u) => {
+        const m = String(u || "").match(/\/api\/companies\/(\d+)\b/i);
+        return m ? Number(m[1]) : null;
+      };
+
+      const canAutoApprovePpe = (companyId) => {
         try {
-          data = txt ? JSON.parse(txt) : null;
+          const cid = FS?.control?.resolveCid?.(companyId) ?? companyId;
+          if (!cid) return false;
+          const roleRaw = (typeof getCurrentRole === "function" ? getCurrentRole() : "");
+          return !!FS?.policy?.canApprovePpe?.(roleRaw, cid);
         } catch {
-          const err = new Error("INVALID_JSON_RESPONSE");
-          err.status = res.status;
-          err.data = txt.slice(0, 300);
+          return false;
+        }
+      };
+
+      const normalizeApproveUrl = (approveUrl, cidFromRequest) => {
+        if (!approveUrl) return null;
+
+        // If backend returns full URL or already api/companies path, keep it.
+        const s = String(approveUrl);
+
+        // If it's already absolute-ish, toApiUrl will handle it.
+        if (s.includes("/api/companies/")) return s;
+
+        // If it's a relative approve path like "/depreciation/approve-post-batch"
+        // we try to prefix with /api/companies/<cid>
+        if (s.startsWith("/")) {
+          if (cidFromRequest) return `/api/companies/${cidFromRequest}${s}`;
+          return s; // fallback
+        }
+
+        // Otherwise assume it’s relative without leading slash
+        if (cidFromRequest) return `/api/companies/${cidFromRequest}/${s}`;
+        return s;
+      };
+
+      // Avoid infinite loops
+      const approveAttempted = options._fsApproveAttempt === true;
+
+      if (finalUrl.includes("/revenue/contracts")) {
+        console.log("[REVENUE FETCH CHECK]", {
+          url: finalUrl,
+          method: options.method || "GET",
+          authorizationPresent: headers.has("Authorization"),
+          authorizationLength: (headers.get("Authorization") || "").length
+        });
+
+        console.trace("[REVENUE FETCH CALLER]");
+      }
+
+      const res = await fetch(finalUrl, { ...options, headers });
+
+      const contentType = res.headers.get("Content-Type") || "";
+      const isJSON = contentType.includes("application/json");
+
+      let data = null;
+
+      if (res.status !== 204) {
+        if (isJSON) {
+          const txt = await res.text().catch(() => "");
+          try {
+            data = txt ? JSON.parse(txt) : null;
+          } catch {
+            const err = new Error("INVALID_JSON_RESPONSE");
+            err.status = res.status;
+            err.data = txt.slice(0, 300);
+            err.url = finalUrl;
+            throw err;
+          }
+        } else {
+          data = await res.text().catch(() => "");
+        }
+      }
+
+      if (!isJSON && typeof data === "string") {
+        const looksHtml = /^\s*<!doctype html|^\s*<html/i.test(data);
+
+        if (looksHtml || res.redirected || finalUrl.includes("/signin")) {
+          sessionStorage.setItem("fs_session_locked", "1");
+          showSessionLockModal?.();
+
+          const err = new Error("SIGNED_OUT_OR_HTML_RESPONSE");
+          err.status = res.status || 401;
+          err.data = data.slice(0, 300);
           err.url = finalUrl;
           throw err;
         }
-      } else {
-        data = await res.text().catch(() => "");
       }
-    }
 
-    if (!isJSON && typeof data === "string") {
-      const looksHtml = /^\s*<!doctype html|^\s*<html/i.test(data);
+      // ✅ AUTO: if PPE review required, retry on approve-post (once)
+      if (!res.ok && res.status === 409 && !approveAttempted) {
+        const code = data?.code || data?.error_code;
+        const approveUrlRaw = data?.approve_post_url || data?.approveUrl;
 
-      if (looksHtml || res.redirected || finalUrl.includes("/signin")) {
-        sessionStorage.setItem("fs_session_locked", "1");
-        showSessionLockModal?.();
+        if (code === "REVIEW_REQUIRED" && approveUrlRaw) {
+          const cid = parseCompanyIdFromUrl(finalUrl);
+          const approveUrl = normalizeApproveUrl(approveUrlRaw, cid);
 
-        const err = new Error("SIGNED_OUT_OR_HTML_RESPONSE");
-        err.status = res.status || 401;
-        err.data = data.slice(0, 300);
-        err.url = finalUrl;
-        throw err;
+          if (cid && canAutoApprovePpe(cid)) {
+            // try carry original payload through (dep_ids etc)
+            let basePayload = {};
+            try {
+              if (typeof options.body === "string" && options.body.trim()) {
+                basePayload = JSON.parse(options.body);
+              }
+            } catch {}
+
+            const approvalNote =
+              (options.approval_note || options.note || basePayload?.approval_note || basePayload?.note || "")
+                .toString()
+                .trim();
+
+            const approvePayload = {
+              ...basePayload, // ✅ carries dep_ids / ids
+              ...(approvalNote ? { note: approvalNote, approval_note: approvalNote } : {})
+            };
+
+            return apiFetch(approveUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(approvePayload), // ✅ includes dep_ids
+              _fsApproveAttempt: true,
+            });
+          }
+
+          const err = new Error(data?.error || "Review required");
+          err.status = 409;
+          err.data = data;
+          err.url = finalUrl;
+          err.approve_post_url = approveUrl;
+          throw err;
+        }
       }
-    }
 
-    // ✅ AUTO: if PPE review required, retry on approve-post (once)
-    if (!res.ok && res.status === 409 && !approveAttempted) {
-      const code = data?.code || data?.error_code;
-      const approveUrlRaw = data?.approve_post_url || data?.approveUrl;
-
-      if (code === "REVIEW_REQUIRED" && approveUrlRaw) {
-        const cid = parseCompanyIdFromUrl(finalUrl);
-        const approveUrl = normalizeApproveUrl(approveUrlRaw, cid);
-
-        if (cid && canAutoApprovePpe(cid)) {
-          // try carry original payload through (dep_ids etc)
-          let basePayload = {};
-          try {
-            if (typeof options.body === "string" && options.body.trim()) {
-              basePayload = JSON.parse(options.body);
-            }
-          } catch {}
-
-          const approvalNote =
-            (options.approval_note || options.note || basePayload?.approval_note || basePayload?.note || "")
-              .toString()
-              .trim();
-
-          const approvePayload = {
-            ...basePayload, // ✅ carries dep_ids / ids
-            ...(approvalNote ? { note: approvalNote, approval_note: approvalNote } : {})
-          };
-
-          return apiFetch(approveUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(approvePayload), // ✅ includes dep_ids
-            _fsApproveAttempt: true,
-          });
+      if (!res.ok) {
+        // ✅ Handle server-returned 423 SESSION_LOCKED
+        if (res.status === 423) {
+          sessionStorage.setItem("fs_session_locked", "1");
+          sessionStorage.setItem("fs_session_lock_reason", (data && (data.error || data.message || data.reason)) || "server_423");
+          showSessionLockModal?.();
         }
 
-        const err = new Error(data?.error || "Review required");
-        err.status = 409;
+        const msg = (data && (data.error || data.message || data.detail)) || `HTTP ${res.status}`;
+        const err = new Error(msg);
+        err.status = res.status;
         err.data = data;
         err.url = finalUrl;
-        err.approve_post_url = approveUrl;
         throw err;
       }
+
+      return data;
+    };
+  } else {
+    // token_manager.js is loaded — provide AUTH_HEADER as a thin wrapper
+    window.AUTH_HEADER = function () {
+      var t = window.getToken();
+      return t ? { Authorization: "Bearer " + t } : {};
+    };
+    if (!window.toApiUrl) {
+      window.toApiUrl = function (url) {
+        if (!url) throw new Error("toApiUrl: url is missing");
+        if (/^https?:\/\//i.test(url)) return url;
+        if (url.charAt(0) === "/") return API_BASE + url;
+        return API_BASE + "/" + url;
+      };
     }
-
-    if (!res.ok) {
-      // ✅ Handle server-returned 423 SESSION_LOCKED
-      if (res.status === 423) {
-        sessionStorage.setItem("fs_session_locked", "1");
-        sessionStorage.setItem("fs_session_lock_reason", (data && (data.error || data.message || data.reason)) || "server_423");
-        showSessionLockModal?.();
-      }
-
-      const msg = (data && (data.error || data.message || data.detail)) || `HTTP ${res.status}`;
-      const err = new Error(msg);
-      err.status = res.status;
-      err.data = data;
-      err.url = finalUrl;
-      throw err;
-    }
-
-    return data;
-  };
+  }
 
 async function resolveCompanyProfile(currentUser) {
   // Always prefer server truth first:
@@ -9605,8 +9630,11 @@ function bindHeaderAuthButtons() {
         return;
       }
 
-      setToken(data.token, true);
-      localStorage.setItem("token", data.token);
+      // ✅ Security hardening: store the access token in memory only
+      // (token_manager.js). The refresh token is set as an HTTP-only
+      // cookie by the backend and is NOT accessible to JavaScript.
+      window.setToken(data.token);
+      // Do NOT write to localStorage or sessionStorage.
 
       store.set("userEmail", email);
 

@@ -14,12 +14,9 @@ import {
 // combined, with pin / collapse / peek behaviour).
 import "../pos-cashier.css";
 
-const fsToken =
-  sessionStorage.getItem("fs_user_token") ||
-  localStorage.getItem("fs_user_token") ||
-  "";
-
-const fsUser = JSON.parse(localStorage.getItem("fs_user") || "{}");
+// ✅ Security hardening: read tokens from in-memory posTokenManager
+const fsToken = (typeof window.getFsToken === "function") ? window.getFsToken() : (sessionStorage.getItem("fs_user_token") || "");
+const fsUser = JSON.parse(sessionStorage.getItem("fs_user") || "{}");
 const isFsUser = !!fsToken;
 
 export function CashierPage() {
@@ -27,8 +24,8 @@ export function CashierPage() {
 
   const hasActiveCompany =
     !!company?.id ||
-    !!localStorage.getItem("active_company_id") ||
-    !!localStorage.getItem("company_id");
+    !!sessionStorage.getItem("active_company_id") ||
+    !!sessionStorage.getItem("company_id");
 
   const mode = getPosMode(company);
   const isRestaurantLike = mode === "restaurant" || mode === "club";
@@ -486,7 +483,8 @@ Thank you for your business!`;
   }, []);
 
   async function restorePosSession() {
-    const token = localStorage.getItem("pos_token");
+    // ✅ Security hardening: read POS token from memory
+    const token = (typeof window.getPosToken === "function") ? window.getPosToken() : "";
 
     if (!token) return;
 
@@ -496,15 +494,16 @@ Thank you for your business!`;
       setCashier(res.employee);
       setSignedIn(true);
 
-      const attendanceId = localStorage.getItem("active_attendance_id");
+      const attendanceId = sessionStorage.getItem("active_attendance_id");
 
       if (attendanceId) {
         setAttendance({ id: Number(attendanceId) });
         setClockedIn(true);
       }
     } catch {
-      localStorage.removeItem("pos_token");
-      localStorage.removeItem("active_attendance_id");
+      // ✅ Clear from memory + sessionStorage
+      if (typeof window.clearPosToken === "function") window.clearPosToken();
+      sessionStorage.removeItem("active_attendance_id");
 
       setCashier(null);
       setSignedIn(false);
@@ -589,7 +588,7 @@ Thank you for your business!`;
     setClockedIn(true);
 
     if (res.attendance?.id) {
-      localStorage.setItem("active_attendance_id", String(res.attendance.id));
+      sessionStorage.setItem("active_attendance_id", String(res.attendance.id));
     }
 
     setMessage("Clocked in successfully.");
@@ -614,7 +613,7 @@ Thank you for your business!`;
 
     setAttendance(res.attendance);
     setClockedIn(false);
-    localStorage.removeItem("active_attendance_id");
+    sessionStorage.removeItem("active_attendance_id");
     setMessage("Clocked out successfully.");
   }
 
@@ -630,13 +629,18 @@ Thank you for your business!`;
         pin: pin.trim(),
       });
 
+      // ✅ Security hardening: store POS token in memory only
       if (res.pos_token) {
-        localStorage.setItem("pos_token", res.pos_token);
+        if (typeof window.setPosToken === "function") {
+          window.setPosToken(res.pos_token);
+        } else {
+          sessionStorage.setItem("pos_token", res.pos_token);
+        }
       }
 
       if (res.company) {
-        localStorage.setItem("active_company", JSON.stringify(res.company));
-        localStorage.setItem("active_company_id", String(res.company.id));
+        sessionStorage.setItem("active_company", JSON.stringify(res.company));
+        sessionStorage.setItem("active_company_id", String(res.company.id));
       }
 
       const activeCashier =
@@ -674,8 +678,9 @@ Thank you for your business!`;
       return;
     }
 
-    localStorage.removeItem("pos_token");
-    localStorage.removeItem("active_attendance_id");
+    // ✅ Clear POS token from memory + sessionStorage
+    if (typeof window.clearPosToken === "function") window.clearPosToken();
+    sessionStorage.removeItem("active_attendance_id");
 
     setSignedIn(false);
     setCashier(null);
@@ -1050,7 +1055,7 @@ Thank you for your business!`;
 
     if (!navigator.onLine) {
       await saveOfflineSale({
-        company_id: company?.id || Number(localStorage.getItem("active_company_id")),
+        company_id: company?.id || Number(sessionStorage.getItem("active_company_id")),
         terminal_id: activeTerminal?.id,
         shift_id: activeShift?.id || null,
         cashier_user_id: cashier?.company_user_id || cashier?.user_id || cashier?.id,
@@ -1250,7 +1255,7 @@ Thank you for your business!`;
   }
 
   function goToMainSignin() {
-    localStorage.setItem(
+    sessionStorage.setItem(
       "fs:intended_url",
       `${window.location.pathname}${window.location.hash || "#/cashier"}`
     );
@@ -1443,7 +1448,7 @@ Thank you for your business!`;
         </div>
       )}
 
-      {!isFsUser && !localStorage.getItem("pos_token") && (
+      {!isFsUser && !(typeof window.getPosToken === "function" && window.getPosToken()) && (
         <div className="pos-message">
           Please sign in to continue.
           <button onClick={goToMainSignin}>Sign in to FinSage</button>

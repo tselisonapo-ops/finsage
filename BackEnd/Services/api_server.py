@@ -1,4 +1,4 @@
-﻿print("[BOOT] api_server.py import started")
+print("[BOOT] api_server.py import started")
 
 # ────────────────────────────────────────────────────────────────
 # Load environment FIRST (before ANY BackEnd.Services imports)
@@ -143,6 +143,18 @@ from BackEnd.Services.db_service import db_service
 
 from BackEnd.Services.auth_middleware import _corsify, require_auth, require_pos_auth
 from BackEnd.Services.auth_service import make_jwt, make_pos_jwt, verify_email_otp, issue_email_otp, OTP_LIFETIME_MINUTES, OTP_RESEND_SECONDS
+# Refresh-token + HTTP-only cookie helpers (security hardening)
+from BackEnd.Services.auth_service import (
+    issue_refresh_token,
+    verify_refresh_token,
+    revoke_refresh_token,
+    revoke_all_user_tokens,
+    attach_refresh_cookie,
+    clear_refresh_cookie,
+    read_refresh_cookie,
+    refresh_access_token,
+)
+from BackEnd.Services.refresh_token_service import ensure_refresh_schema
 
 from BackEnd.Services.coa_service import (
     build_coa,
@@ -169,6 +181,11 @@ from BackEnd.Services.reporting.reporting_helpers import (
     want_export,
 )
 from BackEnd.Services.service_control.service_control import ControlService
+# Create the auth_refresh_tokens table on first boot.
+try:
+    ensure_refresh_schema(db_service)
+except Exception as _refresh_schema_err:
+    print(f"[BOOT] Could not bootstrap refresh-token schema: {_refresh_schema_err}")
 from BackEnd.Services.utils.industry_utils import normalize_industry_pair, slugify, TEMPLATE_INDUSTRY_ALIASES
 from BackEnd.Services.industry_profiles import get_industry_profile
 from BackEnd.Services.reporting.reporting_helpers import build_income_statement_template, choose_layout
@@ -3899,7 +3916,26 @@ def _finalize_signin_session(
         },
     }
 
-    return {"token": token, "response": response_payload}
+    # Issue the HTTP-only refresh-token cookie alongside the access token.
+    try:
+        raw_refresh = issue_refresh_token(
+            db_service,
+            user_id=user_id,
+            product=("ops" if is_ops_signin else "finsage"),
+            user_agent=(request.headers.get("User-Agent") or "")[:1000] or None,
+            ip_address=request.remote_addr,
+        )
+    except Exception:
+        current_app.logger.exception(
+            "Failed to issue refresh token for user %s", user_id
+        )
+        raw_refresh = None
+
+    return {
+        "token": token,
+        "response": response_payload,
+        "refresh_token_raw": raw_refresh,
+    }
 
 
 @app.route("/api/auth/signin", methods=["POST", "OPTIONS"])
@@ -4316,7 +4352,11 @@ def api_auth_signin():
                     status = 403
                 return jsonify(err_body), status
 
-            return jsonify(finalized["response"]), 200
+            resp = jsonify(finalized["response"])
+            resp.status_code = 200
+            if finalized.get("refresh_token_raw"):
+                attach_refresh_cookie(resp, finalized["refresh_token_raw"])
+            return resp
 
         # Send OTP after all existing access checks pass.
         try:
@@ -4832,7 +4872,21 @@ def api_auth_signin_verify_otp():
                 user_id,
             )
 
-        return jsonify({
+        try:
+            raw_refresh = issue_refresh_token(
+                db_service,
+                user_id=user_id,
+                product=("ops" if is_ops_signin else "finsage"),
+                user_agent=request.headers.get("User-Agent", "")[:1000] or None,
+                ip_address=request.remote_addr,
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Failed to issue refresh token for user %s", user_id
+            )
+            raw_refresh = None
+
+        resp = jsonify({
             "message": "signin OK",
             "token": token,
             "product": "FinSage Nexus" if is_ops_signin else "finsage",
@@ -4851,13 +4905,15 @@ def api_auth_signin_verify_otp():
                 "allowed_company_ids": allowed_company_ids,
                 "dashboards": dashboards,
                 "default_dashboard": default_dashboard,
-                # Surface the user's security preferences so the client
-                # can configure its idle-lock engine immediately.
                 "otp_enabled": bool(user.get("otp_enabled", True)),
                 "session_lock_enabled": bool(user.get("session_lock_enabled", True)),
                 "idle_lock_minutes": int(user.get("idle_lock_minutes") or 10),
             },
-        }), 200
+        })
+        resp.status_code = 200
+        if raw_refresh:
+            attach_refresh_cookie(resp, raw_refresh)
+        return resp
 
     except Exception:
         current_app.logger.exception(
@@ -5266,6 +5322,116 @@ def pos_auth_me(company_id):
     }), 200
 
 
+@app.route("/api/auth/refresh", methods=["POST", "OPTIONS"])
+@cross_origin(
+    origins=[
+        "https://finspheresolutions.com",
+        "https://www.finspheresolutions.com",
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+    ],
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["POST", "OPTIONS"],
+    supports_credentials=True,
+)
+def api_auth_refresh():
+    """
+    Exchange the HTTP-only refresh-token cookie for a fresh
+    short-lived access JWT. Token rotation: old token revoked,
+    new one issued.
+    """
+    if request.method == "OPTIONS":
+        return "", 204
+
+    raw_refresh = read_refresh_cookie(request)
+
+    if not raw_refresh:
+        return jsonify({
+            "ok": False,
+            "error": "no_refresh_token",
+            "message": "No refresh token cookie present.",
+        }), 401
+
+    info = verify_refresh_token(db_service, raw_refresh)
+    if not info:
+        resp = jsonify({
+            "ok": False,
+            "error": "invalid_refresh_token",
+            "message": "Refresh token is invalid or expired. Please sign in again.",
+        })
+        resp.status_code = 401
+        resp.delete_cookie("fs_refresh_token", path="/")
+        return resp
+
+    user_id = info["user_id"]
+
+    # Revoke old refresh token (rotation)
+    try:
+        revoke_refresh_token(db_service, raw_refresh)
+    except Exception:
+        current_app.logger.exception(
+            "Failed to revoke old refresh token for user %s", user_id
+        )
+
+    # Issue a new refresh token
+    new_refresh_raw = issue_refresh_token(
+        db_service,
+        user_id=user_id,
+        product=info.get("product", "finsage"),
+        user_agent=(request.headers.get("User-Agent") or "")[:1000] or None,
+        ip_address=request.remote_addr,
+    )
+
+    refreshed = refresh_access_token(db_service, new_refresh_raw)
+    if not refreshed:
+        resp = jsonify({
+            "ok": False,
+            "error": "user_unavailable",
+            "message": "Account is not available.",
+        })
+        resp.status_code = 401
+        resp.delete_cookie("fs_refresh_token", path="/")
+        return resp
+
+    resp = jsonify({
+        "ok": True,
+        "token": refreshed["token"],
+        "expires_in": refreshed["expires_in"],
+        "user": refreshed["user"],
+    })
+    attach_refresh_cookie(resp, new_refresh_raw)
+    return resp
+
+
+@app.route("/api/auth/logout", methods=["POST", "OPTIONS"])
+@cross_origin(
+    origins=[
+        "https://finspheresolutions.com",
+        "https://www.finspheresolutions.com",
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+    ],
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["POST", "OPTIONS"],
+    supports_credentials=True,
+)
+def api_auth_logout():
+    """Revoke the refresh-token cookie and clear it."""
+    if request.method == "OPTIONS":
+        return "", 204
+
+    raw_refresh = read_refresh_cookie(request)
+    if raw_refresh:
+        try:
+            revoke_refresh_token(db_service, raw_refresh)
+        except Exception:
+            current_app.logger.exception("Failed to revoke refresh token on logout")
+
+    resp = jsonify({"ok": True, "message": "Signed out."})
+    clear_refresh_cookie(resp)
+    return resp, 200
+
+
 @app.route("/api/auth/reauth", methods=["POST", "OPTIONS"])
 @require_auth
 def api_auth_reauth():
@@ -5617,6 +5783,12 @@ def change_password():
 
     new_hash = generate_password_hash(new)
     db_service.update_password(user["email"], new_hash)
+    try:
+        revoke_all_user_tokens(db_service, int(user["id"]))
+    except Exception:
+        current_app.logger.exception(
+            "Failed to revoke refresh tokens after password change"
+        )
     return jsonify({"message": "Password updated"}), 200
 
 

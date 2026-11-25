@@ -1,4 +1,7 @@
-import { AUTH_HEADER } from "./authHeader";
+
+// frontEnd/src/api/apiFetch.ts
+
+import { AUTH_HEADER, setToken } from "./authHeader";
 
 const IS_LOCAL =
   window.location.hostname === "localhost" ||
@@ -8,53 +11,174 @@ const BASE_URL = IS_LOCAL
   ? "http://localhost:5000"
   : window.location.origin;
 
-async function refreshToken(): Promise<string> {
-  const res = await fetch(`${BASE_URL}/auth/refresh`, {
+// ── Shared refresh request ────────────────────────────────────
+
+let refreshPromise: Promise<string> | null = null;
+
+async function performTokenRefresh(): Promise<string> {
+  const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
     method: "POST",
     credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}),
   });
-  if (!res.ok) throw new Error("Unable to refresh token");
-  const data = await res.json();
-  const newToken = data.accessToken;
-  localStorage.setItem("fs_user_token", newToken);
-  return newToken;
-}
 
-export async function apiFetch(path: string, options: RequestInit = {}) {
-  const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
-  const headers = new Headers(options.headers);
-
-  if (typeof options.body === "string" && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
+  if (!res.ok) {
+    throw new Error("Unable to refresh token");
   }
 
-  const auth = AUTH_HEADER();
-  Object.entries(auth).forEach(([k, v]) => headers.set(k, v));
+  const data: unknown = await res.json();
 
-  let res = await fetch(url, { ...options, headers, credentials: "include" });
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    !("token" in data) ||
+    typeof data.token !== "string" ||
+    !data.token
+  ) {
+    throw new Error("Refresh response did not contain a valid token");
+  }
 
-  if (res.status === 401) {
+  setToken(data.token);
+
+  return data.token;
+}
+
+async function refreshToken(): Promise<string> {
+  if (!refreshPromise) {
+    refreshPromise = performTokenRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+
+  return refreshPromise;
+}
+
+// ── Automatic token refresh ───────────────────────────────────
+
+let autoRefreshStarted = false;
+
+const AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+
+function startAutoRefresh(): void {
+  if (autoRefreshStarted) return;
+
+  autoRefreshStarted = true;
+
+  window.setInterval(async () => {
     try {
-      const newToken = await refreshToken();
-      headers.set("Authorization", `Bearer ${newToken}`);
-      res = await fetch(url, { ...options, headers, credentials: "include" });
-    } catch {
-      throw new Error("Session expired. Please log in again.");
+      await refreshToken();
+    } catch (error: unknown) {
+      console.warn("[apiFetch] Automatic token refresh failed:", error);
+    }
+  }, AUTO_REFRESH_INTERVAL_MS);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      refreshToken().catch(() => {
+        // A failed background refresh is handled by the next API request.
+      });
+    }
+  });
+}
+
+// ── Error message extraction ──────────────────────────────────
+
+function getErrorMessage(data: unknown, status: number): string {
+  if (typeof data === "string" && data) {
+    return data;
+  }
+
+  if (typeof data === "object" && data !== null) {
+    if ("error" in data && typeof data.error === "string") {
+      return data.error;
+    }
+
+    if ("message" in data && typeof data.message === "string") {
+      return data.message;
+    }
+
+    if ("detail" in data && typeof data.detail === "string") {
+      return data.detail;
     }
   }
 
-  const ct = res.headers.get("Content-Type") || "";
-  const isJson = ct.includes("application/json");
-  const data = isJson
-    ? await res.json().catch(() => ({}))
+  return `HTTP ${status}`;
+}
+
+// ── Main API fetch ────────────────────────────────────────────
+
+export async function apiFetch(
+  path: string,
+  options: RequestInit = {}
+): Promise<unknown> {
+  startAutoRefresh();
+
+  const url = path.startsWith("http")
+    ? path
+    : `${BASE_URL}${path}`;
+
+  const headers = new Headers(options.headers);
+
+  if (
+    typeof options.body === "string" &&
+    !headers.has("Content-Type")
+  ) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const sendRequest = async (): Promise<Response> => {
+    const requestHeaders = new Headers(headers);
+
+    const auth = AUTH_HEADER();
+
+    Object.entries(auth).forEach(([key, value]) => {
+      requestHeaders.set(key, value);
+    });
+
+    return fetch(url, {
+      ...options,
+      headers: requestHeaders,
+      credentials: "include",
+    });
+  };
+
+  let res = await sendRequest();
+
+  // ── 401: refresh and retry once ─────────────────────────────
+
+  if (res.status === 401) {
+    try {
+      await refreshToken();
+      res = await sendRequest();
+    } catch {
+      throw new Error(
+        "Session expired. Your refresh cookie is invalid or missing. Please sign in again."
+      );
+    }
+  }
+
+  // ── Parse response ──────────────────────────────────────────
+
+  const contentType = res.headers.get("Content-Type") || "";
+
+  const data: unknown = contentType.includes("application/json")
+    ? await res.json().catch((): unknown => ({}))
     : await res.text().catch(() => "");
 
   if (!res.ok) {
-    const msg =
-      (typeof data === "object" && data && (data.error || data.message || data.detail)) ||
-      (typeof data === "string" && data) ||
-      `HTTP ${res.status}`;
-    throw new Error(msg);
+    const error = new Error(
+      getErrorMessage(data, res.status)
+    );
+
+    Object.assign(error, {
+      status: res.status,
+      data,
+    });
+
+    throw error;
   }
 
   return data;
