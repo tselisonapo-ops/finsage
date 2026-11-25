@@ -9864,6 +9864,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
             { name: "Invoices", screen: "ar-invoices", icon: "🧾" },
             { name: "Quotations", screen: "ar-quotes", icon: "📑" },
             { name: "Revenue", screen: "revenue", icon: "📈", minRole: "clerk" },
+            { name: "Invoice Templates", screen: "invoice-templates", icon: "🎨", minRole: "clerk" },
           ],
         },
         {
@@ -9929,6 +9930,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       permissionAny: ["can_manage_banking", "can_post_journals"],
       children: [
         { name: "Bank Setup", screen: "bank-setup", icon: "⚙️", minRole: "clerk", permission: "can_manage_banking" },
+        { name: "Live Bank Feeds", screen: "bank-feeds", icon: "⚡", minRole: "clerk", permissionAny: ["can_manage_banking", "can_post_journals"] },
         { name: "Cashbook", screen: "banking", icon: "💵", minRole: "assistant", permissionAny: ["can_manage_banking", "can_post_journals"] },
         { name: "Bank Reconciliation", screen: "bank-recon", icon: "🔍", minRole: "assistant", permissionAny: ["can_manage_banking", "can_post_journals"] },
       ],
@@ -12373,6 +12375,7 @@ const SCREEN_POLICY = {
   "ar-invoices": { auth: "private", minRole: "clerk", permission: "can_manage_ar" },
   "ar-quotes": { auth: "private", minRole: "clerk", permission: "can_manage_ar" },
   "ar-receipts": { auth: "private", minRole: "clerk", permission: "can_manage_ar" },
+  "invoice-templates": { auth: "private", minRole: "clerk", permission: "can_manage_ar" },
   revenue: { auth: "private", minRole: "clerk", permission: "can_manage_ar" },
   "revenue-setup": { auth: "private", minRole: "assistant", permission: "can_prepare_financials" },
 
@@ -12391,6 +12394,7 @@ const SCREEN_POLICY = {
 
   // Banking
   "bank-setup": { auth: "private", minRole: "clerk", permission: "can_manage_banking" },
+  "bank-feeds": { auth: "private", minRole: "clerk", permissionAny: ["can_manage_banking", "can_post_journals"] },
   banking: { auth: "private", minRole: "assistant", permissionAny: ["can_manage_banking", "can_post_journals"] },
   "bank-recon": { auth: "private", minRole: "assistant", permissionAny: ["can_manage_banking", "can_post_journals"] },
   loans: { auth: "private", minRole: "clerk", permission: "can_manage_loans" },
@@ -13827,6 +13831,17 @@ function resolveScreenName(name) {
     "revenue-desk": "revenue",
     "revenue-contracts": "revenue",
     "revenue-runs": "revenue",
+
+    // Invoice Templates aliases
+    "invoice-template": "invoice-templates",
+    "invoice-templates": "invoice-templates",
+    "templates": "invoice-templates",
+
+    // Bank Feeds aliases
+    "bank-feed": "bank-feeds",
+    "bank-feeds": "bank-feeds",
+    "bankfeeds": "bank-feeds",
+    "live-bank-feeds": "bank-feeds",
   };
 
   return alias[n] || n;
@@ -14169,6 +14184,8 @@ async function switchScreen(
       else if (isIAS41Workflow) base = "ias41";
       else if (isDataMigrationWorkflow) base = "data-migration";
       else if (isGroupReportingWorkflow) base = "group-reporting";
+      else if (target === "invoice-templates") base = "invoice-templates";
+      else if (target === "bank-feeds") base = "bank-feeds";
       else base = target.split("-")[0];
 
       // Remember current screen
@@ -14289,6 +14306,8 @@ async function switchScreen(
         "project-material-issues": "Project Desk - Material Issues",
         "project-profitability": "Project Desk - Profitability",
         fixedassets: "Property, Plant & Equipment (IAS 16)",
+        "invoice-templates": "Invoice Templates & Customization",
+        "bank-feeds": "Cash & Banking - Live Bank Feeds",
         help: "Help & Support",
       };
 
@@ -14299,6 +14318,18 @@ async function switchScreen(
 
       if (isControlRoom) {
         getControlsMount?.();
+      }
+
+      if (base === "invoice-templates") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[InvoiceTemplates] company load failed:", e); }
+        window.bindInvoiceTemplatesScreen?.();
+        return;
+      }
+
+      if (base === "bank-feeds") {
+        try { await ensureCompanyDataLoaded?.(); } catch (e) { console.warn("[BankFeeds] company load failed:", e); }
+        window.bindBankFeedsScreen?.();
+        return;
       }
 
       if (base === "data-migration") {

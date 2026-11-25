@@ -8366,7 +8366,7 @@ tbody tr:hover {
 
 .dt-page {
   width: 100%;
-  max-width: 1540px;
+  max-width: none;
   min-width: 0;
   margin: 0 auto;
   padding: 30px 30px 48px;
@@ -9341,6 +9341,180 @@ tbody tr:hover {
   #dtModalBody {
     max-height: calc(100vh - 90px);
     padding: 17px;
+  }
+}
+
+/* =========================================================
+   DEFERRED TAX — FULLSCREEN + CLEAN TABLE LAYOUT (v2)
+   - Removes max-width cap so the page uses the full
+     content width (sidenav is preserved by .main margin).
+   - Switches the run-detail tables to table-layout: fixed
+     so column widths can be controlled explicitly.
+   - Allocates a clean, comfortable width to the Message /
+     Notes column and makes the other columns smaller and
+     wrap cleanly instead of pushing the row wider.
+   ========================================================= */
+
+/* Run detail tables — fixed layout for predictable columns */
+#dtRunDetail .dt-table,
+#dtAssetTaxRunDetail .dt-table {
+  table-layout: fixed;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Header cells: allow wrapping, smaller padding */
+#dtRunDetail .dt-table thead th,
+#dtAssetTaxRunDetail .dt-table thead th {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  padding: 10px 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  vertical-align: bottom;
+  text-align: left;
+  min-width: 0;
+  max-width: none;
+}
+
+/* Body cells: allow wrapping, smaller padding */
+#dtRunDetail .dt-table tbody td,
+#dtAssetTaxRunDetail .dt-table tbody td {
+  padding: 10px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  vertical-align: top;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  max-width: none;
+}
+
+/* Override the old "last-child" rule that targeted the wrong column
+   in draft mode (Action is last, not Message) */
+#dtRunDetail .dt-table td:last-child,
+#dtAssetTaxRunDetail .dt-table td:last-child {
+  min-width: 0;
+  max-width: none;
+  color: inherit;
+}
+
+/* Numeric columns: right-aligned, no wrap */
+#dtRunDetail .dt-table thead th:nth-child(4),
+#dtRunDetail .dt-table thead th:nth-child(5),
+#dtRunDetail .dt-table thead th:nth-child(6),
+#dtRunDetail .dt-table thead th:nth-child(8),
+#dtRunDetail .dt-table tbody td:nth-child(4),
+#dtRunDetail .dt-table tbody td:nth-child(5),
+#dtRunDetail .dt-table tbody td:nth-child(6),
+#dtRunDetail .dt-table tbody td:nth-child(8),
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(5),
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(6),
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(7),
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(8),
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(9),
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(10),
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(11),
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(12),
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(13),
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(14),
+#dtAssetTaxRunDetail .dt-table tbody td:nth-child(5),
+#dtAssetTaxRunDetail .dt-table tbody td:nth-child(6),
+#dtAssetTaxRunDetail .dt-table tbody td:nth-child(7),
+#dtAssetTaxRunDetail .dt-table tbody td:nth-child(8),
+#dtAssetTaxRunDetail .dt-table tbody td:nth-child(9),
+#dtAssetTaxRunDetail .dt-table tbody td:nth-child(10),
+#dtAssetTaxRunDetail .dt-table tbody td:nth-child(11),
+#dtAssetTaxRunDetail .dt-table tbody td:nth-child(12),
+#dtAssetTaxRunDetail .dt-table tbody td:nth-child(13),
+#dtAssetTaxRunDetail .dt-table tbody td:nth-child(14) {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+/* ---------- #dtRunDetail column widths ----------
+   10 columns normally, 11 in draft mode (Action is last) */
+#dtRunDetail .dt-table thead th:nth-child(1)  { width: 13%; }  /* Description */
+#dtRunDetail .dt-table thead th:nth-child(2)  { width: 6%; }   /* Source */
+#dtRunDetail .dt-table thead th:nth-child(3)  { width: 7%; }   /* Balance Type */
+#dtRunDetail .dt-table thead th:nth-child(4)  { width: 9%; }   /* Carrying Amount */
+#dtRunDetail .dt-table thead th:nth-child(5)  { width: 9%; }   /* Tax Base */
+#dtRunDetail .dt-table thead th:nth-child(6)  { width: 7%; }   /* Difference */
+#dtRunDetail .dt-table thead th:nth-child(7)  { width: 6%; }   /* Type */
+#dtRunDetail .dt-table thead th:nth-child(8)  { width: 8%; }   /* Deferred Tax */
+#dtRunDetail .dt-table thead th:nth-child(9)  { width: 8%; }   /* Scan Status */
+
+/* Message column — clean wrapping, comfortable width */
+#dtRunDetail .dt-table thead th:nth-child(10),
+#dtRunDetail .dt-table tbody td:nth-child(10) {
+  width: 20%;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  color: #62788c;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* Action column (only in draft mode) */
+#dtRunDetail .dt-table thead th:nth-child(11),
+#dtRunDetail .dt-table tbody td:nth-child(11) {
+  width: 7%;
+  white-space: normal;
+  word-break: break-word;
+  text-align: left;
+}
+
+#dtRunDetail .dt-table tbody td:nth-child(11) .btn {
+  white-space: normal;
+  word-break: break-word;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+/* ---------- #dtAssetTaxRunDetail column widths ----------
+   15 columns */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(1)  { width: 12%; }  /* Asset */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(2)  { width: 6%; }   /* Rule */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(3)  { width: 6%; }   /* Source */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(4)  { width: 6%; }   /* Method */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(5)  { width: 4%; }   /* Rate */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(6)  { width: 6%; }   /* Opening Tax WDV */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(7)  { width: 5%; }   /* Additions */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(8)  { width: 6%; }   /* Initial Allowance */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(9)  { width: 6%; }   /* Annual Allowance */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(10) { width: 6%; }   /* Total Allowance */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(11) { width: 6%; }   /* Closing Tax WDV */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(12) { width: 6%; }   /* Book Depreciation */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(13) { width: 6%; }   /* Tax Adjustment */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(14) { width: 6%; }   /* Temporary Difference */
+
+/* Notes column — clean wrapping */
+#dtAssetTaxRunDetail .dt-table thead th:nth-child(15),
+#dtAssetTaxRunDetail .dt-table tbody td:nth-child(15) {
+  width: 13%;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  color: #62788c;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* Small screens: allow horizontal scroll for the detail tables */
+@media (max-width: 1180px) {
+  #dtRunDetail .dt-table {
+    min-width: 1100px;
+  }
+  #dtAssetTaxRunDetail .dt-table {
+    min-width: 1400px;
   }
 }
 
@@ -22680,6 +22854,10 @@ body{
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                 Quotations
               </button>
+              <button type="button" id="ar2SegTemplates" role="tab" aria-selected="false" onclick="window.switchScreen('invoice-templates')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                Custom Templates
+              </button>
             </div>
           </div>
 
@@ -31209,7 +31387,8 @@ body{
               <h3>Bank Reconciliation</h3>
               <p class="cb4-hero-sub" id="cb4ReconMeta">Select or create a reconciliation to match statement lines against the cashbook.</p>
             </div>
-            <div class="cb4-hero-side">
+            <div class="cb4-hero-side flex items-center gap-2">
+              <button type="button" class="cb4-btn cb4-btn--teal" onclick="window.switchScreen('bank-feeds')">⚡ Live Bank Feeds</button>
               <button id="reconBackBtn" class="cb4-btn cb4-btn--back">&larr; Back to cashbook</button>
             </div>
           </div>
@@ -31346,6 +31525,374 @@ body{
           </aside>
         </div>
       </section>
+
+      <!-- =========================================================
+           SCREEN: INVOICE TEMPLATES & CUSTOMIZATION
+           ========================================================= -->
+      <section id="screen-invoice-templates" class="screen hidden p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
+        <!-- Hero Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-[var(--fs-navy,#0F2A3D)] to-slate-800 text-white shadow-lg">
+          <div>
+            <div class="text-xs uppercase tracking-wider text-emerald-400 font-bold mb-1">Receivables &middot; Brand Identity</div>
+            <h2 class="text-2xl font-black">Invoice Templates &amp; Customization</h2>
+            <p class="text-sm text-slate-300 mt-1 max-w-2xl">
+              Create unique invoice templates for your customers. Customize brand colors, logo alignment, bank details, and payment terms without enforcing a single default layout on all users.
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
+            <button type="button" onclick="window.switchScreen('ar')" class="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-sm transition-all">
+              &larr; Back to Invoices
+            </button>
+          </div>
+        </div>
+
+        <!-- Presets Row -->
+        <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+          <div class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">🎨 Quick Starter Presets (Click to Load)</div>
+          <div id="itPresetsHost" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
+        </div>
+
+        <!-- Main Workspace Grid: Templates List (Left) + Customizer & Live Preview (Right) -->
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+          
+          <!-- Left Column: Existing Templates (5 cols) -->
+          <div class="xl:col-span-5 space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="font-bold text-slate-800 text-base">Your Company Templates</h3>
+              <button type="button" id="itResetBtn" class="text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 px-2.5 py-1 rounded-lg">
+                + New Blank
+              </button>
+            </div>
+            <div id="itTemplatesListHost" class="grid grid-cols-1 gap-3">
+              <div class="p-6 text-center text-slate-400 text-sm">Loading templates...</div>
+            </div>
+          </div>
+
+          <!-- Right Column: Builder Form + Real-time Preview (7 cols) -->
+          <div class="xl:col-span-7 space-y-4">
+            <div id="itFormCard" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div class="flex items-center gap-2">
+                  <h3 class="font-bold text-slate-800 text-base">Template Designer</h3>
+                  <span id="itEditingBadge" class="hidden px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button type="button" id="itSaveBtn" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all">
+                    💾 Save Template
+                  </button>
+                </div>
+              </div>
+
+              <form id="itCustomizerForm" class="space-y-4">
+                <!-- Basic Info -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Template Name *</label>
+                    <input id="itFormName" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" placeholder="e.g. Modern VIP Client Template" required />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Font Family</label>
+                    <select id="itFormFont" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white">
+                      <option value="Helvetica">Helvetica (Clean Sans-Serif)</option>
+                      <option value="Times">Times New Roman (Classic Serif)</option>
+                      <option value="Courier">Courier (Monospace Precision)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Brand Color Palette -->
+                <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
+                  <span class="text-xs font-bold text-slate-700 block">Brand Colors</span>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-[11px] text-slate-500 mb-1 font-semibold">Primary Color (Headers &amp; Titles)</label>
+                      <div class="flex items-center gap-2">
+                        <input type="color" id="itFormPrimaryColor" value="#0F2A3D" class="w-8 h-8 rounded border border-slate-200 cursor-pointer" />
+                        <input id="itFormPrimaryHex" value="#0F2A3D" class="w-24 px-2 py-1 border border-slate-200 rounded text-xs font-mono" />
+                        <div class="flex items-center gap-1">
+                          <button type="button" class="w-5 h-5 rounded-full it-palette-chip border" style="background:#0F2A3D" data-color="#0F2A3D" title="Navy"></button>
+                          <button type="button" class="w-5 h-5 rounded-full it-palette-chip border" style="background:#064E3B" data-color="#064E3B" title="Emerald"></button>
+                          <button type="button" class="w-5 h-5 rounded-full it-palette-chip border" style="background:#1E40AF" data-color="#1E40AF" title="Royal Blue"></button>
+                          <button type="button" class="w-5 h-5 rounded-full it-palette-chip border" style="background:#881337" data-color="#881337" title="Crimson"></button>
+                          <button type="button" class="w-5 h-5 rounded-full it-palette-chip border" style="background:#18181B" data-color="#18181B" title="Charcoal"></button>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label class="block text-[11px] text-slate-500 mb-1 font-semibold">Accent Color (Totals &amp; Highlights)</label>
+                      <div class="flex items-center gap-2">
+                        <input type="color" id="itFormAccentColor" value="#2FA4A9" class="w-8 h-8 rounded border border-slate-200 cursor-pointer" />
+                        <input id="itFormAccentHex" value="#2FA4A9" class="w-24 px-2 py-1 border border-slate-200 rounded text-xs font-mono" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Display & Columns Options -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <label class="flex items-center gap-2 p-2 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" id="itFormShowLogo" checked />
+                    <span>Show Logo</span>
+                  </label>
+                  <label class="flex items-center gap-2 p-2 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" id="itFormShowTax" checked />
+                    <span>Show Tax Column</span>
+                  </label>
+                  <label class="flex items-center gap-2 p-2 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" id="itFormShowDisc" checked />
+                    <span>Show Discount</span>
+                  </label>
+                  <label class="flex items-center gap-2 p-2 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" id="itFormShowCode" />
+                    <span>Show Item Code</span>
+                  </label>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Logo Alignment</label>
+                    <select id="itFormLogoAlign" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white">
+                      <option value="left">Left Aligned</option>
+                      <option value="center">Centered</option>
+                      <option value="right">Right Aligned</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Bank Name</label>
+                    <input id="itFormBankName" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" placeholder="e.g. FNB / Standard Bank" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Bank Account Number</label>
+                    <input id="itFormBankAcc" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" placeholder="e.g. 62001122334" />
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Account Holder Name</label>
+                    <input id="itFormBankAccName" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" placeholder="e.g. FinSage Trading (Pty) Ltd" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Branch Code</label>
+                    <input id="itFormBranchCode" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" placeholder="e.g. 250655" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">SWIFT / BIC Code</label>
+                    <input id="itFormSwift" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" placeholder="e.g. FIRNZAJJ" />
+                  </div>
+                </div>
+
+                <!-- Terms & Footer -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Payment Terms Note</label>
+                    <textarea id="itFormTerms" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" placeholder="Payment due within 30 days via EFT. Quote invoice # as reference."></textarea>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Custom Footer Message</label>
+                    <textarea id="itFormFooter" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" placeholder="Thank you for your business!"></textarea>
+                  </div>
+                </div>
+
+                <div class="pt-2 flex items-center justify-between">
+                  <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800">
+                    <input type="checkbox" id="itFormIsDefault" />
+                    <span>Set as Active Company Default Invoice Template</span>
+                  </label>
+                </div>
+              </form>
+            </div>
+
+            <!-- Live Invoice Preview Card -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+              <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                <span class="text-xs font-bold text-slate-700 uppercase tracking-wider">👁️ Live Interactive Invoice Preview</span>
+                <span class="text-[11px] text-slate-400">Updates dynamically</span>
+              </div>
+              <div id="itPreviewBox" class="border border-slate-200 rounded-xl bg-white shadow-xs overflow-hidden">
+                <!-- Preview populated via JS -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================================================
+           SCREEN: LIVE BANK FEEDS & CUSTOMER BANKING
+           ========================================================= -->
+      <section id="screen-bank-feeds" class="screen hidden p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
+        <!-- Hero Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-slate-900 to-teal-950 text-white shadow-lg">
+          <div>
+            <div class="text-xs uppercase tracking-wider text-teal-400 font-bold mb-1">Cash &amp; Banking &middot; Open Banking API</div>
+            <h2 class="text-2xl font-black">Live Bank Feeds</h2>
+            <p class="text-sm text-slate-300 mt-1 max-w-2xl">
+              Connect your bank accounts to automatically ingest posted transactions, track real-time available cash balances, and trigger 1-click reconciliation against invoices and bills.
+            </p>
+          </div>
+          <div class="flex items-center gap-2.5">
+            <button type="button" id="bfSyncAllBtn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
+              🔄 Sync Feeds Now
+            </button>
+            <button type="button" id="bfConnectBankBtn" class="px-4 py-2 bg-white text-slate-900 hover:bg-slate-100 rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
+              ⚡ Connect Bank
+            </button>
+          </div>
+        </div>
+
+        <!-- KPI Summary Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <span class="text-xs text-slate-500 font-semibold block">Connected Accounts</span>
+              <strong id="bfKpiAccountsCount" class="text-2xl font-black text-slate-900 mt-1 block">0</strong>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl">🏦</div>
+          </div>
+
+          <div class="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <span class="text-xs text-slate-500 font-semibold block">Total Available Balance</span>
+              <strong id="bfKpiTotalBalance" class="text-2xl font-black text-emerald-600 mt-1 block">$ 0.00</strong>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl">💵</div>
+          </div>
+
+          <div class="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <span class="text-xs text-slate-500 font-semibold block">Last Feed Sync</span>
+              <strong id="bfKpiLastSync" class="text-xl font-bold text-slate-800 mt-1 block">—</strong>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center text-xl">⏱️</div>
+          </div>
+        </div>
+
+        <!-- Connected Accounts Grid -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold text-slate-800 text-base">Connected Bank Feeds</h3>
+            <button type="button" id="bfGotoReconBtn" class="text-xs font-bold text-teal-700 hover:text-teal-900 bg-teal-50 px-3 py-1.5 rounded-lg border border-teal-200 flex items-center gap-1">
+              🔍 Go to Bank Reconciliation &rarr;
+            </button>
+          </div>
+          <div id="bfCardsHost" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Cards populated by JS -->
+          </div>
+        </div>
+
+        <!-- Recent Transactions Activity -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h4 class="font-bold text-slate-900 text-sm">Recent Bank Feed Statements &amp; Ingestion Logs</h4>
+              <p class="text-xs text-slate-500">Statement lines imported via live aggregator feeds.</p>
+            </div>
+            <button type="button" class="text-xs font-bold text-blue-600 hover:text-blue-800" onclick="window.switchScreen('bank-recon')">
+              Auto-Match All in Reconciliation &rarr;
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50/80 text-[11px] font-bold text-slate-600 uppercase border-b border-slate-100">
+                  <th class="py-2.5 px-3">Feed Source / File</th>
+                  <th class="py-2.5 px-3">Date</th>
+                  <th class="py-2.5 px-3">Status</th>
+                  <th class="py-2.5 px-3 text-right">Transactions</th>
+                  <th class="py-2.5 px-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody id="bfRecentTxnsHost">
+                <tr>
+                  <td colspan="5" class="py-6 text-center text-slate-400 text-xs">
+                    Loading bank statements...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Connect Bank Feed Modal -->
+      <div id="bfConnectModal" class="hidden fixed inset-0 z-[100] bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div class="p-5 bg-gradient-to-r from-slate-900 to-teal-950 text-white flex items-center justify-between">
+            <div>
+              <span class="text-[10px] font-bold text-teal-400 uppercase tracking-wider">Open Banking Link</span>
+              <h3 class="text-lg font-black">Connect Bank Account</h3>
+            </div>
+            <button type="button" id="bfCloseModalBtn" class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm">&times;</button>
+          </div>
+
+          <form id="bfConnectForm" class="p-6 space-y-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-2">Select Provider / Integration Mode</label>
+              <div class="grid grid-cols-3 gap-2">
+                <label class="p-3 rounded-xl border border-slate-200 has-[:checked]:border-teal-600 has-[:checked]:bg-teal-50/40 cursor-pointer flex flex-col items-center text-center">
+                  <input type="radio" name="bfProvider" value="sandbox" checked class="hidden" />
+                  <span class="text-xl mb-1">⚡</span>
+                  <strong class="text-xs text-slate-800">Test Sandbox</strong>
+                  <span class="text-[10px] text-slate-500">Instant test feed</span>
+                </label>
+
+                <label class="p-3 rounded-xl border border-slate-200 has-[:checked]:border-teal-600 has-[:checked]:bg-teal-50/40 cursor-pointer flex flex-col items-center text-center">
+                  <input type="radio" name="bfProvider" value="stitch" class="hidden" />
+                  <span class="text-xl mb-1">🇿🇦</span>
+                  <strong class="text-xs text-slate-800">Stitch (SA)</strong>
+                  <span class="text-[10px] text-slate-500">FNB, Standard, ABSA</span>
+                </label>
+
+                <label class="p-3 rounded-xl border border-slate-200 has-[:checked]:border-teal-600 has-[:checked]:bg-teal-50/40 cursor-pointer flex flex-col items-center text-center">
+                  <input type="radio" name="bfProvider" value="plaid" class="hidden" />
+                  <span class="text-xl mb-1">🌐</span>
+                  <strong class="text-xs text-slate-800">Plaid / Global</strong>
+                  <span class="text-[10px] text-slate-500">12,000+ banks</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Bank Name *</label>
+                <input id="bfBankNameInput" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" placeholder="e.g. Standard Bank / FNB" required />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Account Holder / Name</label>
+                <input id="bfAccNameInput" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" placeholder="e.g. Operating Current" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Account Number *</label>
+                <input id="bfAccNoInput" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" placeholder="e.g. 62001122334" required />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Opening Balance</label>
+                <input id="bfBalanceInput" type="number" step="0.01" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" value="15000" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Currency</label>
+                <input id="bfCurrencyInput" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs" value="USD" />
+              </div>
+            </div>
+
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs text-slate-500">
+              ℹ️ Transactions will be securely fetched and automatically ingested into your bank statement line items for instant reconciliation.
+            </div>
+
+            <div class="pt-2 flex items-center justify-end gap-2">
+              <button type="button" id="bfCancelModalBtn" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold">
+                Cancel
+              </button>
+              <button type="submit" class="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-sm">
+                Connect &amp; Sync Now
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
 
         <section id="screen-help" class="screen hidden">
           <div class="max-w-5xl mx-auto p-6 space-y-6">
@@ -40398,7 +40945,11 @@ body{
 
     /* ═══ REMITTANCE IMPORT MODULE ═══ */
     loadScript("/makro_screen.js?v=20261117c");
-    loadScript("/marketplace_create_order.js?v=20261118a")
+    loadScript("/marketplace_create_order.js?v=20261118a");
+
+    /* ═══ CUSTOM INVOICE TEMPLATES & LIVE BANK FEEDS MODULES ═══ */
+    loadScript("/invoice_templates_ui.js?v=20261125a");
+    loadScript("/bank_feeds_ui.js?v=20261125a");
 </script>
 <!-- v3: demo inline PAYE validate bridge removed — the REAL engine is restored via /tax-filing-dashboard-integration.js?v=20260818a in the loader chain; it strips the inline onclick and binds the Validate button itself -->
 
@@ -50071,5 +50622,7 @@ th.num { text-align: right; }
   }, true);
 })();
 </script>
+<script src="invoice_templates_ui.js?v=20261125a"></script>
+<script src="bank_feeds_ui.js?v=20261125a"></script>
 </body>
 </html>
