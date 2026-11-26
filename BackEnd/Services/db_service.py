@@ -42571,6 +42571,7 @@ class DatabaseService:
                         ''lessor_lease_finance_income'',
                         ''lessor_lease_receipt'',
                         ''lessor_lease_deposit'',
+                        ''lessor_lease_direct_cost_paid'',
                         ''lessor_lease_modification'',
                         ''lessor_lease_termination'',
 
@@ -42579,6 +42580,7 @@ class DatabaseService:
                         ''lessor_lease_finance_income_reversal'',
                         ''lessor_lease_receipt_reversal'',
                         ''lessor_lease_deposit_reversal'',
+                        ''lessor_lease_direct_cost_paid_reversal'',
                         ''lessor_lease_modification_reversal'',
                         ''lessor_lease_termination_reversal'',
 
