@@ -2088,7 +2088,7 @@ def lessor_subsequent_measurement(company_id, lease_id):
         lease = workspace.get("lease") or {}
         idc_incurred = float(lease.get("initial_direct_costs") or 0)
         idc_recognised = float(lease.get("initial_direct_costs_recognised") or 0)
-        has_idc_journal = bool(lease.get("initial_direct_costs_journal_id"))
+        has_idc_journal = bool(lease.get("direct_cost_capture_journal_id"))
         has_idc_bill = bool(lease.get("initial_direct_costs_bill_id"))
 
         idc_pending = (
@@ -2201,7 +2201,7 @@ def post_lessor_schedule_period(
 
         idc_incurred = float(lease.get("initial_direct_costs") or 0)
         idc_recognised = float(lease.get("initial_direct_costs_recognised") or 0)
-        has_idc_journal = bool(lease.get("initial_direct_costs_journal_id"))
+        has_idc_journal = bool(lease.get("direct_cost_capture_journal_id"))
         has_idc_bill = bool(lease.get("initial_direct_costs_bill_id"))
 
         idc_pending = (
