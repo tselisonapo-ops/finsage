@@ -74964,19 +74964,17 @@ class DatabaseService:
                 # 1) Validate lessor lease + resolve classification
                 cur.execute(
                     f"""
-                    SELECT
-                        id,
-                        contract_name,
-                        lease_classification,
-                        manufacturer_or_dealer_lessor,
-                        manufacturer_dealer,
-                        net_investment_noncurrent_account_code,
-                        net_investment_current_account_code,
-                        underlying_asset_account_code,
-                        asset_account_code,
-                        cost_of_sales_account_code
-                    FROM {schema}.lessor_leases
-                    WHERE id = %s
+                        SELECT
+                            id,
+                            contract_name,
+                            lease_classification,
+                            manufacturer_dealer_lessor,
+                            net_investment_noncurrent_account_code,
+                            underlying_asset_account_code,
+                            initial_direct_cost_asset_account_code,
+                            initial_direct_cost_expense_account_code
+                        FROM {schema}.lessor_leases
+                        WHERE id = %s
                     """,
                     (lessor_lease_id,),
                 )
