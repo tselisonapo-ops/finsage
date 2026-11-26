@@ -74966,7 +74966,7 @@ class DatabaseService:
                     f"""
                     SELECT
                         id,
-                        lease_name,
+                        contract_name,
                         lease_classification,
                         manufacturer_or_dealer_lessor,
                         manufacturer_dealer,
@@ -74985,23 +74985,24 @@ class DatabaseService:
                     raise ValueError("Lessor lease not found")
 
                 lease_name = (
-                    lease.get("lease_name")
+                    lease.get("contract_name")
                     if isinstance(lease, dict)
                     else lease[1]
                 )
 
                 classification = str(
-                    lease.get("lease_classification") or ""
-                    if isinstance(lease, dict)
-                    else lease[2]
+                    (
+                        lease.get("lease_classification") or ""
+                        if isinstance(lease, dict)
+                        else lease[2]
+                    )
                 ).strip().lower()
 
                 manufacturer_dealer = self._bool(
-                    lease.get("manufacturer_or_dealer_lessor")
-                    or lease.get("manufacturer_dealer")
-                    if isinstance(lease, dict)
-                    else (
-                        lease[3] if len(lease) > 3 else None
+                    (
+                        lease.get("manufacturer_dealer_lessor")
+                        if isinstance(lease, dict)
+                        else lease[3]
                     )
                 )
 
@@ -75012,29 +75013,36 @@ class DatabaseService:
                     if classification == "finance":
                         if manufacturer_dealer:
                             resolved_asset_account = (
-                                lease.get("cost_of_sales_account_code")
-                                or ""
-                                if isinstance(lease, dict)
-                                else (lease[9] if len(lease) > 9 else "")
-                            ) or "PL_COS_5000"
+                                (
+                                    lease.get("initial_direct_cost_expense_account_code")
+                                    if isinstance(lease, dict)
+                                    else lease[7]
+                                )
+                                or "PL_COS_5000"
+                            )
                         else:
                             resolved_asset_account = (
-                                lease.get("net_investment_noncurrent_account_code")
-                                or ""
-                                if isinstance(lease, dict)
-                                else (lease[5] if len(lease) > 5 else "")
-                            ) or "BS_NCA_1640"
+                                (
+                                    lease.get("net_investment_noncurrent_account_code")
+                                    if isinstance(lease, dict)
+                                    else lease[4]
+                                )
+                                or "BS_NCA_1640"
+                            )
+
                     elif classification == "operating":
                         resolved_asset_account = (
-                            lease.get("underlying_asset_account_code")
-                            or lease.get("asset_account_code")
-                            or ""
-                            if isinstance(lease, dict)
-                            else (
-                                (lease[7] if len(lease) > 7 else "")
-                                or (lease[8] if len(lease) > 8 else "")
+                            (
+                                lease.get("underlying_asset_account_code")
+                                or lease.get("initial_direct_cost_asset_account_code")
+                                if isinstance(lease, dict)
+                                else (
+                                    lease[5] or lease[6]
+                                )
                             )
-                        ) or "BS_NCA_1500"
+                            or "BS_NCA_1500"
+                        )
+
                     else:
                         raise ValueError(
                             "Lessor lease must be classified (finance or "
