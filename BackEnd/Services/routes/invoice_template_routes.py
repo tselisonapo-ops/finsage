@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import Blueprint, request, jsonify, current_app, make_response
 from BackEnd.Services.auth_middleware import require_auth
 from BackEnd.Services.db_service import db_service
-
+from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
 invoice_templates_bp = Blueprint("invoice_templates_bp", __name__)
 
 PRESET_TEMPLATES = [
@@ -75,26 +75,6 @@ def _corsify(resp):
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     return resp
 
-def _deny_if_wrong_company(payload, company_id: int):
-    role = (payload.get("role") or "").strip().lower()
-    if role == "admin":
-        return None
-    token_cid = payload.get("token_company_id", payload.get("company_id"))
-    allowed = payload.get("token_allowed_company_ids") or payload.get("allowed_company_ids") or []
-    try:
-        allowed = [int(x) for x in allowed]
-    except Exception:
-        allowed = []
-    try:
-        cid = int(company_id)
-        if token_cid and int(token_cid) == cid:
-            return None
-        if cid in allowed:
-            return None
-    except Exception:
-        pass
-    return jsonify({"ok": False, "error": "AUTH|forbidden_company"}), 403
-
 @invoice_templates_bp.route("/api/companies/<int:company_id>/invoice-templates/presets", methods=["GET", "OPTIONS"])
 def get_presets(company_id: int):
     if request.method == "OPTIONS":
@@ -126,7 +106,14 @@ def list_or_create_templates(company_id: int):
         payload.get("is_delegated_company_access"),
         payload.get("access_scope"),
     )
-    deny = _deny_if_wrong_company(payload, company_id)
+    payload = getattr(request, "jwt_payload", {}) or {}
+
+    deny = _deny_if_wrong_company(
+        payload,
+        company_id,
+        db_service=db_service,
+        engagement_id=payload.get("engagement_id"),
+    )
     if deny:
         return deny
 
