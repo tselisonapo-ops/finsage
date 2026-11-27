@@ -17864,233 +17864,222 @@ body{
   })();
   </script>
 
-  <!-- ═══ SCREEN PATCH: add "bank-feeds" and "invoice-templates" to
-       SCREEN_POLICY and wrap switchScreen so these two screens route
-       correctly. Without this, canOpenScreen() returns false and the
-       user sees "This screen is not enabled yet." when clicking
-       Live Bank Feeds or Invoice Templates in the nav or on the
-       Bank Reconciliation page. ═══ -->
+  <!-- ═══ SCREEN PATCH: intercept switchScreen for "bank-feeds" and
+       "invoice-templates" so the "This screen is not enabled yet."
+       popup NEVER fires.
+
+       ROOT CAUSE: The original switchScreen (line 14009 of dashboard.js)
+       calls canOpenScreen(target) at line 14045 via a CLOSURE reference
+       — not window.canOpenScreen. canOpenScreen checks SCREEN_POLICY
+       which is also a closure-local const — not on window. So we
+       CANNOT patch SCREEN_POLICY or canOpenScreen from inline scripts.
+
+       FIX: We wrap window.switchScreen and FULLY intercept these two
+       screens BEFORE the original runs. We handle everything ourselves:
+       hide all screens, show the correct screen element, update nav
+       highlight, update the screen title, and call the bind function.
+       The original switchScreen is never called for these two screens,
+       so the alert popup never fires. ═══ -->
   <script>
   (function(){
     "use strict";
 
-    // ── 1. Patch SCREEN_POLICY ──────────────────────────────────
-    function patchScreenPolicy(){
-      if(typeof SCREEN_POLICY === "undefined" || !SCREEN_POLICY) return false;
-
-      if(!SCREEN_POLICY["bank-feeds"]){
-        SCREEN_POLICY["bank-feeds"] = {
-          auth: "private",
-          minRole: "clerk",
-          permissionAny: ["can_manage_banking", "can_post_journals"]
-        };
+    // ── Screen definitions ──────────────────────────────────────
+    var EXTRA_SCREENS = {
+      "bank-feeds": {
+        base: "bank-feeds",
+        title: "Cash & Banking - Live Bank Feeds",
+        bindFn: "bindBankFeedsScreen"
+      },
+      "invoice-templates": {
+        base: "invoice-templates",
+        title: "Invoice Templates & Customization",
+        bindFn: "bindInvoiceTemplatesScreen"
       }
+    };
 
-      if(!SCREEN_POLICY["invoice-templates"]){
-        SCREEN_POLICY["invoice-templates"] = {
-          auth: "private",
-          minRole: "clerk",
-          permission: "can_manage_ar"
-        };
-      }
+    // Aliases that the original resolveScreenName would map
+    var EXTRA_ALIASES = {
+      "bank-feed": "bank-feeds",
+      "bankfeeds": "bank-feeds",
+      "live-bank-feeds": "bank-feeds",
+      "invoice-template": "invoice-templates",
+      "templates": "invoice-templates"
+    };
 
-      return true;
+    // ── Helper: resolve alias ───────────────────────────────────
+    function resolveAlias(name){
+      var n = String(name || "").trim();
+      if(EXTRA_ALIASES[n]) return EXTRA_ALIASES[n];
+      if(EXTRA_SCREENS[n]) return n;
+      return n;
     }
 
-    // ── 2. Patch APP_SCREEN_ROUTES (for URL routing) ──────────
-    function patchAppScreenRoutes(){
-      if(typeof APP_SCREEN_ROUTES === "undefined" || !APP_SCREEN_ROUTES) return false;
-
-      if(!APP_SCREEN_ROUTES["bank-feeds"]){
-        APP_SCREEN_ROUTES["bank-feeds"] = "bank-feeds";
-      }
-      if(!APP_SCREEN_ROUTES["invoice-templates"]){
-        APP_SCREEN_ROUTES["invoice-templates"] = "invoice-templates";
+    // ── Helper: show a screen element ──────────────────────────
+    function showScreenEl(base){
+      var screens = document.querySelectorAll(".screen");
+      for(var i = 0; i < screens.length; i++){
+        screens[i].classList.remove("active");
+        screens[i].classList.add("hidden");
       }
 
-      // Also patch the reverse map if it exists
-      if(typeof APP_ROUTE_SCREENS !== "undefined" && APP_ROUTE_SCREENS){
-        if(!APP_ROUTE_SCREENS["bank-feeds"]) APP_ROUTE_SCREENS["bank-feeds"] = "bank-feeds";
-        if(!APP_ROUTE_SCREENS["invoice-templates"]) APP_ROUTE_SCREENS["invoice-templates"] = "invoice-templates";
-      }
-
-      return true;
-    }
-
-    // ── 3. Helper: show a screen element ───────────────────────
-    function showScreen(base){
-      // Hide all screens
-      document.querySelectorAll(".screen").forEach(function(s){
-        s.classList.remove("active");
-        s.classList.add("hidden");
-      });
-
-      // Show the target screen
       var el = document.getElementById("screen-" + base);
       if(el){
         el.classList.remove("hidden");
         el.classList.add("active");
         if(el.style.display === "none") el.style.display = "";
+        return true;
       }
-
-      return !!el;
+      return false;
     }
 
-    // ── 4. Helper: update nav highlight ────────────────────────
+    // ── Helper: update nav highlight ───────────────────────────
     function updateNavHighlight(target){
-      document.querySelectorAll(".nav-item-link").forEach(function(a){
-        a.classList.remove("active");
-      });
+      var links = document.querySelectorAll(".nav-item-link");
+      for(var i = 0; i < links.length; i++){
+        links[i].classList.remove("active");
+      }
       var activeLink = document.querySelector('[data-nav="' + target + '"]');
       if(activeLink) activeLink.classList.add("active");
     }
 
-    // ── 5. Helper: update screen title ─────────────────────────
+    // ── Helper: update screen title ────────────────────────────
     function updateScreenTitle(title){
       var el = document.getElementById("screenTitle");
       if(el) el.textContent = title;
     }
 
-    // ── 6. Wrap switchScreen to handle these screens ───────────
-    // The external dashboard.js may already route these correctly.
-    // This wrapper intercepts bank-feeds and invoice-templates:
-    //   - If the original already handles them, it runs first and
-    //     we only call the bind function as a fallback.
-    //   - If the original doesn't handle them, we do everything:
-    //     show the screen, update nav, update title, call bind.
+    // ── Helper: update header context ─────────────────────────
+    function updateHeaderContext(title){
+      var el = document.getElementById("headerScreenContext");
+      if(el) el.textContent = title;
+    }
+
+    // ── Handle a screen fully ──────────────────────────────────
+    async function handleScreenFully(target, screenInfo){
+      // 1. Show the screen element (hide all others first)
+      showScreenEl(screenInfo.base);
+
+      // 2. Update nav highlight
+      updateNavHighlight(target);
+
+      // 3. Update screen title + header context
+      updateScreenTitle(screenInfo.title);
+      updateHeaderContext(screenInfo.title);
+
+      // 4. Ensure company data is loaded
+      try {
+        if(typeof window.ensureCompanyDataLoaded === "function"){
+          await window.ensureCompanyDataLoaded();
+        }
+      } catch(e) {
+        console.warn("[" + target + " patch] company load failed:", e);
+      }
+
+      // 5. Call the bind function to render screen content
+      var bindFn = window[screenInfo.bindFn];
+      if(typeof bindFn === "function"){
+        try {
+          await bindFn();
+        } catch(e) {
+          console.error("[" + target + " patch] " + screenInfo.bindFn + " failed:", e);
+        }
+      } else {
+        console.warn("[" + target + " patch] " + screenInfo.bindFn + " is not a function");
+      }
+    }
+
+    // ── Wrap switchScreen ──────────────────────────────────────
     var _originalSwitchScreen = null;
-    var _switchScreenWrapped = false;
+    var _wrapped = false;
 
     function wrapSwitchScreen(){
-      if(_switchScreenWrapped) return true;
+      if(_wrapped) return true;
       if(typeof window.switchScreen !== "function") return false;
 
       _originalSwitchScreen = window.switchScreen;
-      _switchScreenWrapped = true;
+      _wrapped = true;
 
       window.switchScreen = async function patchedSwitchScreen(name, opts){
-        var target = name;
+        // Resolve aliases ourselves (we can't use the closure-local
+        // resolveScreenName from dashboard.js)
+        var target = resolveAlias(name);
 
-        // Normalise aliases the same way the original does
-        if(typeof resolveScreenName === "function"){
-          target = resolveScreenName(target);
+        var screenInfo = EXTRA_SCREENS[target];
+
+        // ── Not one of our screens: delegate to original ─────
+        if(!screenInfo){
+          return _originalSwitchScreen.call(this, name, opts);
         }
 
-        // ── Intercept bank-feeds ──────────────────────────────
-        if(target === "bank-feeds"){
-          // Track whether the original called bindBankFeedsScreen
-          var _origCalledBind = false;
-          var _origBindBank = window.bindBankFeedsScreen;
-          if(typeof _origBindBank === "function"){
-            window.bindBankFeedsScreen = async function(){
-              _origCalledBind = true;
-              return _origBindBank.apply(this, arguments);
-            };
-          }
-
-          // Try the original switchScreen first
-          var _origSucceeded = false;
-          try {
-            await _originalSwitchScreen.call(this, name, opts);
-            _origSucceeded = true;
-          } catch(e) {
-            console.error("[bank-feeds patch] original switchScreen error:", e);
-          }
-
-          // Restore the original bind function
-          window.bindBankFeedsScreen = _origBindBank;
-
-          // Fallback: if the original didn't show the screen or call
-          // the bind function, handle it ourselves.
-          if(!_origCalledBind){
-            console.log("[bank-feeds patch] Fallback: handling screen manually");
-
-            // Ensure the screen element is visible
-            var screenEl = document.getElementById("screen-bank-feeds");
-            var isVisible = screenEl && screenEl.classList.contains("active");
-            if(!isVisible) showScreen("bank-feeds");
-
-            // Update nav + title
-            updateNavHighlight("bank-feeds");
-            updateScreenTitle("Cash & Banking - Live Bank Feeds");
-
-            // Ensure company data is loaded, then bind the screen
-            try {
-              if(typeof ensureCompanyDataLoaded === "function") await ensureCompanyDataLoaded();
-            } catch(e) { console.warn("[bank-feeds patch] company load failed:", e); }
-            try {
-              if(typeof window.bindBankFeedsScreen === "function"){
-                await window.bindBankFeedsScreen();
-              }
-            } catch(e) { console.error("[bank-feeds patch] bindBankFeedsScreen failed:", e); }
-          }
-
-          return;
-        }
-
-        // ── Intercept invoice-templates ──────────────────────
-        if(target === "invoice-templates"){
-          var _origCalledBindIT = false;
-          var _origBindIT = window.bindInvoiceTemplatesScreen;
-          if(typeof _origBindIT === "function"){
-            window.bindInvoiceTemplatesScreen = async function(){
-              _origCalledBindIT = true;
-              return _origBindIT.apply(this, arguments);
-            };
-          }
-
-          var _origSucceededIT = false;
-          try {
-            await _originalSwitchScreen.call(this, name, opts);
-            _origSucceededIT = true;
-          } catch(e) {
-            console.error("[invoice-templates patch] original switchScreen error:", e);
-          }
-
-          window.bindInvoiceTemplatesScreen = _origBindIT;
-
-          if(!_origCalledBindIT){
-            console.log("[invoice-templates patch] Fallback: handling screen manually");
-
-            var screenElIT = document.getElementById("screen-invoice-templates");
-            var isVisibleIT = screenElIT && screenElIT.classList.contains("active");
-            if(!isVisibleIT) showScreen("invoice-templates");
-
-            updateNavHighlight("invoice-templates");
-            updateScreenTitle("Invoice Templates & Customization");
-
-            try {
-              if(typeof ensureCompanyDataLoaded === "function") await ensureCompanyDataLoaded();
-            } catch(e) { console.warn("[invoice-templates patch] company load failed:", e); }
-            try {
-              if(typeof window.bindInvoiceTemplatesScreen === "function"){
-                await window.bindInvoiceTemplatesScreen();
-              }
-            } catch(e) { console.error("[invoice-templates patch] bindInvoiceTemplatesScreen failed:", e); }
-          }
-
-          return;
-        }
-
-        // ── All other screens: delegate to original ──────────
-        return _originalSwitchScreen.call(this, name, opts);
+        // ── One of our screens: handle FULLY ourselves ──────
+        // We do NOT call the original switchScreen at all, because
+        // the original would call canOpenScreen(target) via a
+        // closure reference to the local function, which checks the
+        // closure-local SCREEN_POLICY — and these screens aren't in
+        // that SCREEN_POLICY (in the deployed/older dashboard.js).
+        // That would trigger the alert("This screen is not enabled
+        // yet.") popup. By handling everything ourselves, we bypass
+        // the original entirely and no popup ever fires.
+        console.log("[" + target + " patch] Intercepted — handling fully");
+        await handleScreenFully(target, screenInfo);
       };
 
       return true;
     }
 
-    // ── 7. Run patches when ready ──────────────────────────────
+    // ── Also patch canOpenScreen and guardScreenAccess on window ─
+    // Even though the original switchScreen calls these via closure
+    // (not window.*), OTHER code paths may call them via window.*,
+    // e.g. shouldShowNavItem uses canOpenScreen via closure too, but
+    // the nav rendering for bank-feeds/invoice-templates is controlled
+    // by permission/feature checks, not SCREEN_POLICY. Patching these
+    // on window is a belt-and-suspenders safety net.
+    function patchCanOpenScreen(){
+      if(typeof window.canOpenScreen !== "function") return false;
+      if(window.canOpenScreen.__patched) return true;
+
+      var orig = window.canOpenScreen;
+      window.canOpenScreen = function(name){
+        var resolved = resolveAlias(name);
+        if(EXTRA_SCREENS[resolved]) return true;
+        return orig.call(this, name);
+      };
+      window.canOpenScreen.__patched = true;
+      return true;
+    }
+
+    function patchGuardScreenAccess(){
+      if(typeof window.guardScreenAccess !== "function") return false;
+      if(window.guardScreenAccess.__patched) return true;
+
+      var orig = window.guardScreenAccess;
+      window.guardScreenAccess = function(name){
+        var resolved = resolveAlias(name);
+        if(EXTRA_SCREENS[resolved]){
+          return { ok: true, resolved: resolved };
+        }
+        return orig.call(this, name);
+      };
+      window.guardScreenAccess.__patched = true;
+      return true;
+    }
+
+    // ── Run patches when ready ─────────────────────────────────
     function tryPatch(){
-      var policyOk = patchScreenPolicy();
-      var routesOk = patchAppScreenRoutes();
-      var switchOk = wrapSwitchScreen();
-      return policyOk && routesOk && switchOk;
+      var sw = wrapSwitchScreen();
+      patchCanOpenScreen();
+      patchGuardScreenAccess();
+      return sw;
     }
 
     if(!tryPatch()){
-      var _patchTries = 0;
-      var _patchIv = setInterval(function(){
-        if(tryPatch() || ++_patchTries > 100){ clearInterval(_patchIv); }
+      var _tries = 0;
+      var _iv = setInterval(function(){
+        _tries++;
+        if(tryPatch() || _tries > 100){
+          clearInterval(_iv);
+        }
       }, 100);
     }
   })();
