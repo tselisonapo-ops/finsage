@@ -188149,10 +188149,18 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             for line in preview["lines"]
         ]
 
+        payroll_posting_date = run.get("period_end")
+
+        if not payroll_posting_date:
+            raise ValueError(
+                "Payroll period end date is required "
+                "for payroll journal posting."
+            )
+
         journal_id=self.post_journal(
             company_id,
             {
-                "date":str(run["payment_date"]),
+                "date":str(payroll_posting_date),
                 "ref":
                     f"PAYROLL-RUN-{payroll_run_id}",
                 "description":
