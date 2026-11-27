@@ -107,6 +107,25 @@ def list_or_create_templates(company_id: int):
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
     payload = getattr(request, "auth_payload", {}) or {}
+    current_app.logger.warning(
+        "[INVOICE_TEMPLATES_AUTH] "
+        "requested_company=%s role=%s user_id=%s "
+        "company_id=%s token_company_id=%s "
+        "allowed_company_ids=%s token_allowed_company_ids=%s "
+        "target_company_id=%s source_company_id=%s "
+        "is_delegated=%s access_scope=%s",
+        company_id,
+        payload.get("role"),
+        payload.get("user_id"),
+        payload.get("company_id"),
+        payload.get("token_company_id"),
+        payload.get("allowed_company_ids"),
+        payload.get("token_allowed_company_ids"),
+        payload.get("target_company_id"),
+        payload.get("source_company_id"),
+        payload.get("is_delegated_company_access"),
+        payload.get("access_scope"),
+    )
     deny = _deny_if_wrong_company(payload, company_id)
     if deny:
         return deny
