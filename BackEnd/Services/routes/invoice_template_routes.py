@@ -167,8 +167,13 @@ def manage_single_template(company_id: int, template_id: int):
 def set_default_template(company_id: int, template_id: int):
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
-    payload = getattr(request, "auth_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    payload = getattr(request, "jwt_payload", {}) or {}
+    deny = _deny_if_wrong_company(
+        payload,
+        company_id,
+        db_service=db_service,
+        engagement_id=payload.get("engagement_id"),
+    )
     if deny:
         return deny
 
