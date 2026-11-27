@@ -1,6 +1,12 @@
 // frontEnd/invoice_templates_ui.js
-// FinSage - Custom Invoice Templates Workspace (v2)
+// FinSage - Custom Invoice Templates Workspace (v3)
 // Full-screen side-by-side: Template Designer (left) + Live Preview (right)
+// Template ONLY controls visual design (colors, fonts, columns, footer).
+// Company name, currency, banking, VAT number, etc. are auto-read from
+// the dashboard.js company context (window.CURRENT_COMPANY, etc.).
+// Payment terms and banking details are invoice-level settings, NOT
+// template-level — they are read from the company profile at invoice
+// creation/issuance time.
 (function () {
   "use strict";
 
@@ -26,9 +32,9 @@
   let templatesState = [];
   let presetsState = [];
   let currentEditingId = null;
+  var companyCtx = null; // cached company context for preview
 
   // ── Expanded color palettes ─────────────────────────────────
-  // Professional, brand-ready color schemes grouped by mood.
   var PRIMARY_PALETTES = [
     // Classic / Corporate
     { name: "Navy",        color: "#0F2A3D" },
@@ -82,6 +88,110 @@
     { name: "Fuchsia",    color: "#C026D3" },
   ];
 
+  // ── Resolve company context from dashboard.js globals ────
+  // Mirrors the same priority order used in dashboard.js:
+  //   1. window.CURRENT_COMPANY (in-memory, authoritative)
+  //   2. window.FS_RESOLVE_COMPANY_NAME() (branding resolver)
+  //   3. localStorage caches
+  //   4. window.resolveCurrency() for the currency code
+  //   5. Fetch bank accounts via API for banking preview
+  function resolveCompanyName() {
+    var c = window.CURRENT_COMPANY || {};
+    var fromObj = c.company_name || c.name || c.legal_name || "";
+    if (fromObj) return String(fromObj).trim();
+
+    if (typeof window.FS_RESOLVE_COMPANY_NAME === "function") {
+      var resolved = window.FS_RESOLVE_COMPANY_NAME();
+      if (resolved) return String(resolved).trim();
+    }
+
+    var fromLS =
+      localStorage.getItem("active_company_name") ||
+      localStorage.getItem("companyName") ||
+      localStorage.getItem("company_name") ||
+      "";
+    if (fromLS) return String(fromLS).trim();
+
+    return "Your Company";
+  }
+
+  function resolveCurrencyCode() {
+    if (typeof window.resolveCurrency === "function") {
+      var cur = window.resolveCurrency();
+      if (cur) return String(cur).trim().toUpperCase();
+    }
+    var c = window.CURRENT_COMPANY || {};
+    if (c.currency) return String(c.currency).trim().toUpperCase();
+    if (window.CURRENT_CURRENCY) return String(window.CURRENT_CURRENCY).trim().toUpperCase();
+    return "USD";
+  }
+
+  function resolveCompanyField(field) {
+    var c = window.CURRENT_COMPANY || {};
+    // Try direct field, then common aliases
+    var aliases = {
+      vat: ["vat", "vat_number", "vatNo"],
+      reg_no: ["company_reg_no", "reg_no", "registration_no", "system_company_code"],
+      tin: ["tin", "tax_number", "taxNumber"],
+      address: ["physical_address", "address"],
+      phone: ["company_phone", "phone"],
+      email: ["company_email", "email"],
+      country: ["country"],
+    };
+    var keys = aliases[field] || [field];
+    for (var i = 0; i < keys.length; i++) {
+      if (c[keys[i]]) return String(c[keys[i]]).trim();
+    }
+    return "";
+  }
+
+  // Fetch the company's default bank account for the preview.
+  // Returns { bankName, accountNumber, accountName, branchCode, swift } or null.
+  async function fetchDefaultBankAccount() {
+    var cid = getCid();
+    try {
+      var res = await window.apiFetch("/api/companies/" + cid + "/bank_accounts");
+      if (!res) return null;
+      var accounts = res.bank_accounts || res.accounts || res.data || res.rows || [];
+      if (!Array.isArray(accounts) || !accounts.length) return null;
+      // Find the default payments account, or fall back to the first active account
+      var defaultAcc = accounts.find(function(a) {
+        return a.is_default_payments === true || a.is_default === true;
+      });
+      if (!defaultAcc) {
+        defaultAcc = accounts.find(function(a) { return a.is_active !== false; });
+      }
+      if (!defaultAcc) defaultAcc = accounts[0];
+      return {
+        bankName: defaultAcc.bank_name || defaultAcc.name || "",
+        accountNumber: defaultAcc.account_number || defaultAcc.account_number_masked || "",
+        accountName: defaultAcc.account_name || defaultAcc.holder_name || resolveCompanyName(),
+        branchCode: defaultAcc.branch_code || defaultAcc.branch_sort_code || "",
+        swift: defaultAcc.swift_bic || defaultAcc.swift || "",
+      };
+    } catch (err) {
+      console.warn("[InvoiceTemplates] Bank fetch failed:", err);
+      return null;
+    }
+  }
+
+  async function loadCompanyContext() {
+    var bank = await fetchDefaultBankAccount();
+    companyCtx = {
+      name: resolveCompanyName(),
+      currency: resolveCurrencyCode(),
+      vatNo: resolveCompanyField("vat"),
+      regNo: resolveCompanyField("reg_no"),
+      tin: resolveCompanyField("tin"),
+      address: resolveCompanyField("address"),
+      phone: resolveCompanyField("phone"),
+      email: resolveCompanyField("email"),
+      country: resolveCompanyField("country"),
+      bank: bank || { bankName: "", accountNumber: "", accountName: resolveCompanyName(), branchCode: "", swift: "" },
+    };
+    return companyCtx;
+  }
+
   // ── API calls ──────────────────────────────────────────────
   async function fetchTemplates() {
     const cid = getCid();
@@ -134,10 +244,6 @@
                 ? `<span style="padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;">★ DEFAULT</span>`
                 : `<button type="button" class="it-set-default-btn" data-id="${t.id}" style="font-size:11px;font-weight:600;color:#475569;background:#f1f5f9;padding:3px 8px;border-radius:6px;border:none;cursor:pointer;">Set Default</button>`
             }
-          </div>
-          <div style="font-size:11px;color:#475569;background:#f8fafc;padding:8px 10px;border-radius:8px;border:1px solid #f1f5f9;">
-            <div><strong>Bank:</strong> ${esc(t.bank_name || "Company Default")} ${t.bank_account_number ? `(${esc(t.bank_account_number)})` : ""}</div>
-            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>Terms:</strong> ${esc(t.payment_terms_note || "Standard 30 Days")}</div>
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;padding-top:8px;border-top:1px solid #f1f5f9;">
             <button type="button" class="it-edit-btn" data-id="${t.id}" style="font-size:12px;font-weight:600;color:#2563eb;border:none;background:transparent;cursor:pointer;">✏️ Edit</button>
@@ -261,7 +367,8 @@
 
   // ── Apply preset to form ──────────────────────────────────
   function applyPresetToForm(p) {
-    var el = document.getElementById("itFormName"); if (el) el.value = p.name + " Copy";
+    var el;
+    el = document.getElementById("itFormName"); if (el) el.value = p.name + " Copy";
     el = document.getElementById("itFormPrimaryColor"); if (el) el.value = p.primary_color;
     el = document.getElementById("itFormPrimaryHex"); if (el) el.value = p.primary_color;
     el = document.getElementById("itFormAccentColor"); if (el) el.value = p.accent_color;
@@ -272,7 +379,6 @@
     el = document.getElementById("itFormShowTax"); if (el) el.checked = p.show_tax_column !== false;
     el = document.getElementById("itFormShowDisc"); if (el) el.checked = p.show_discount_column !== false;
     el = document.getElementById("itFormShowCode"); if (el) el.checked = !!p.show_item_code;
-    el = document.getElementById("itFormTerms"); if (el) el.value = p.payment_terms_note || "";
     el = document.getElementById("itFormFooter"); if (el) el.value = p.footer_note || "";
     currentEditingId = null;
     var badge = document.getElementById("itEditingBadge");
@@ -281,6 +387,8 @@
   }
 
   // ── Live preview update ───────────────────────────────────
+  // Reads template design fields from the form + company context
+  // from companyCtx (loaded once at screen init).
   function updateLivePreview() {
     var pCol = (document.getElementById("itFormPrimaryColor") || {}).value || "#0F2A3D";
     var aCol = (document.getElementById("itFormAccentColor") || {}).value || "#2FA4A9";
@@ -290,14 +398,29 @@
     var showCode = (document.getElementById("itFormShowCode") || {}).checked; if (showCode === undefined) showCode = false;
     var showDisc = (document.getElementById("itFormShowDisc") || {}).checked; if (showDisc === undefined) showDisc = true;
     var showTax = (document.getElementById("itFormShowTax") || {}).checked; if (showTax === undefined) showTax = true;
+    var footer = (document.getElementById("itFormFooter") || {}).value || "";
 
-    var bankName = (document.getElementById("itFormBankName") || {}).value || "First National Bank";
-    var bankAcc = (document.getElementById("itFormBankAcc") || {}).value || "62001122334";
-    var bankAccName = (document.getElementById("itFormBankAccName") || {}).value || "FinSage Trading (Pty) Ltd";
-    var branchCode = (document.getElementById("itFormBranchCode") || {}).value || "250655";
-    var swift = (document.getElementById("itFormSwift") || {}).value || "FIRNZAJJ";
-    var terms = (document.getElementById("itFormTerms") || {}).value || "Payment due within 30 days.";
-    var footer = (document.getElementById("itFormFooter") || {}).value || "Thank you for your business!";
+    // Company context (auto-resolved from dashboard.js globals)
+    var ctx = companyCtx || {};
+    var companyName = ctx.name || "Your Company";
+    var currency = ctx.currency || "USD";
+    var vatNo = ctx.vatNo || "";
+    var regNo = ctx.regNo || "";
+    var companyAddress = ctx.address || "";
+    var companyPhone = ctx.phone || "";
+    var companyEmail = ctx.email || "";
+    var bank = ctx.bank || {};
+    var bankName = bank.bankName || "[Company Bank Account]";
+    var bankAcc = bank.accountNumber || "";
+    var bankAccName = bank.accountName || companyName;
+    var branchCode = bank.branchCode || "";
+    var swift = bank.swift || "";
+
+    // Build the subtext line under the company name
+    var subTextParts = [];
+    if (vatNo) subTextParts.push("VAT No: " + esc(vatNo));
+    if (regNo) subTextParts.push("Reg: " + esc(regNo));
+    var subText = subTextParts.join(" &middot; ");
 
     var preview = document.getElementById("itPreviewBox");
     if (!preview) return;
@@ -306,6 +429,9 @@
     var logoTextAlign = logoAlign === "center" ? "center" : logoAlign === "right" ? "right" : "left";
 
     preview.style.fontFamily = fontFamily;
+
+    // Format amounts with the company currency
+    var curSym = currency === "USD" ? "$" : currency === "ZAR" ? "R" : currency === "LSL" ? "L" : currency + " ";
 
     preview.innerHTML = `
       <!-- Top accent bars -->
@@ -316,9 +442,11 @@
         <!-- Header -->
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
           <div style="text-align:${logoTextAlign};width:100%;">
-            ${showLogo ? `<div style="font-weight:800;font-size:17px;color:${pCol};">🏢 [Company Logo / Name]</div>` : ""}
-            <div style="font-size:11px;color:#64748b;margin-top:3px;">Tax / VAT No: 4900123456 &middot; Reg: 2024/1000/07</div>
-            <div style="font-size:11px;color:#64748b;">124 Innovation Way, Sandton, Johannesburg</div>
+            ${showLogo ? `<div style="font-weight:800;font-size:17px;color:${pCol};">${esc(companyName)}</div>` : ""}
+            ${subText ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${subText}</div>` : ""}
+            ${companyAddress ? `<div style="font-size:11px;color:#64748b;">${esc(companyAddress)}</div>` : ""}
+            ${companyPhone ? `<div style="font-size:11px;color:#64748b;">${esc(companyPhone)}</div>` : ""}
+            ${companyEmail ? `<div style="font-size:11px;color:#64748b;">${esc(companyEmail)}</div>` : ""}
           </div>
         </div>
 
@@ -328,15 +456,15 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;font-size:12px;">
           <div style="border:1px solid #e2e8f0;padding:12px;border-radius:8px;">
             <div style="color:${pCol};font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:.05em;margin-bottom:6px;">Bill To</div>
-            <div style="font-weight:700;font-size:13px;">Acme Enterprises Ltd</div>
-            <div style="color:#64748b;margin-top:2px;">accounts@acme.corp</div>
-            <div style="color:#64748b;">123 Business Ave, Cape Town</div>
+            <div style="font-weight:700;font-size:13px;">[Customer Name]</div>
+            <div style="color:#64748b;margin-top:2px;">[Customer Email]</div>
+            <div style="color:#64748b;">[Customer Address]</div>
           </div>
           <div style="border:1px solid #e2e8f0;padding:12px;border-radius:8px;text-align:right;">
             <div style="color:${pCol};font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:.05em;margin-bottom:6px;">Tax Invoice</div>
-            <div style="font-weight:700;font-size:13px;">Invoice #INV-2026-0042</div>
-            <div style="color:#64748b;margin-top:2px;">Date: 25 Nov 2026</div>
-            <div style="color:#64748b;">Due: 25 Dec 2026</div>
+            <div style="font-weight:700;font-size:13px;">Invoice #[Auto-generated]</div>
+            <div style="color:#64748b;margin-top:2px;">Date: [Invoice Date]</div>
+            <div style="color:#64748b;">Due: [Due Date]</div>
           </div>
         </div>
 
@@ -356,50 +484,41 @@
           <tbody>
             <tr style="border-bottom:1px solid #f1f5f9;">
               ${showCode ? `<td style="padding:8px 10px;color:#64748b;font-size:11px;">SRV-01</td>` : ""}
-              <td style="padding:8px 10px;"><strong>Financial Advisory &amp; Consulting</strong><br><span style="color:#94a3b8;font-size:10px;">Monthly retainer — strategic planning</span></td>
-              <td style="padding:8px 10px;text-align:center;">10</td>
-              <td style="padding:8px 10px;text-align:right;">$ 150.00</td>
-              ${showDisc ? `<td style="padding:8px 10px;text-align:right;color:#16a34a;">$ 0.00</td>` : ""}
-              ${showTax ? `<td style="padding:8px 10px;text-align:right;">$ 225.00</td>` : ""}
-              <td style="padding:8px 10px;text-align:right;font-weight:700;">$ 1,725.00</td>
-            </tr>
-            <tr style="border-bottom:1px solid #f1f5f9;">
-              ${showCode ? `<td style="padding:8px 10px;color:#64748b;font-size:11px;">SRV-02</td>` : ""}
-              <td style="padding:8px 10px;"><strong>Bookkeeping Services</strong><br><span style="color:#94a3b8;font-size:10px;">Monthly bookkeeping — 15 transactions</span></td>
+              <td style="padding:8px 10px;"><strong>Sample Service Line</strong><br><span style="color:#94a3b8;font-size:10px;">Description shown on the invoice</span></td>
               <td style="padding:8px 10px;text-align:center;">1</td>
-              <td style="padding:8px 10px;text-align:right;">$ 850.00</td>
-              ${showDisc ? `<td style="padding:8px 10px;text-align:right;color:#16a34a;">$ 85.00</td>` : ""}
-              ${showTax ? `<td style="padding:8px 10px;text-align:right;">$ 114.75</td>` : ""}
-              <td style="padding:8px 10px;text-align:right;font-weight:700;">$ 879.75</td>
+              <td style="padding:8px 10px;text-align:right;">${curSym}1,500.00</td>
+              ${showDisc ? `<td style="padding:8px 10px;text-align:right;color:#16a34a;">${curSym}0.00</td>` : ""}
+              ${showTax ? `<td style="padding:8px 10px;text-align:right;">${curSym}225.00</td>` : ""}
+              <td style="padding:8px 10px;text-align:right;font-weight:700;">${curSym}1,725.00</td>
             </tr>
           </tbody>
         </table>
 
-        <!-- Totals & Banking -->
+        <!-- Totals & Banking (auto-filled from company context) -->
         <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:14px;font-size:12px;">
           <div style="border:1px solid #e2e8f0;padding:12px;border-radius:8px;">
-            <div style="color:${pCol};font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:.05em;margin-bottom:8px;">Banking Payment Details</div>
+            <div style="color:${pCol};font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:.05em;margin-bottom:8px;">Banking Details <span style="font-size:9px;font-weight:400;color:#94a3b8;text-transform:none;letter-spacing:0;">(auto from company profile)</span></div>
             <div style="margin-bottom:4px;"><strong>Bank:</strong> ${esc(bankName)}</div>
+            ${bankAcc ? `<div style="margin-bottom:4px;"><strong>Account #:</strong> ${esc(bankAcc)}</div>` : ""}
             <div style="margin-bottom:4px;"><strong>Account Holder:</strong> ${esc(bankAccName)}</div>
-            <div style="margin-bottom:4px;"><strong>Account #:</strong> ${esc(bankAcc)}</div>
-            <div style="margin-bottom:4px;"><strong>Branch Code:</strong> ${esc(branchCode)}</div>
-            <div style="margin-bottom:4px;"><strong>SWIFT/BIC:</strong> ${esc(swift)}</div>
-            <div style="margin-top:8px;padding-top:6px;border-top:1px dashed #e2e8f0;color:#64748b;font-size:11px;"><strong>Terms:</strong> ${esc(terms)}</div>
+            ${branchCode ? `<div style="margin-bottom:4px;"><strong>Branch Code:</strong> ${esc(branchCode)}</div>` : ""}
+            ${swift ? `<div style="margin-bottom:4px;"><strong>SWIFT/BIC:</strong> ${esc(swift)}</div>` : ""}
+            <div style="margin-top:6px;color:#94a3b8;font-size:10px;font-style:italic;">Payment terms are set per invoice, not per template.</div>
           </div>
           <div style="border:1px solid #e2e8f0;padding:12px;border-radius:8px;display:flex;flex-direction:column;justify-content:space-between;">
             <div style="margin-bottom:8px;">
-              <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Subtotal</span><span>$ 2,265.00</span></div>
-              <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Discount</span><span style="color:#16a34a;">- $ 85.00</span></div>
-              <div style="display:flex;justify-content:space-between;"><span>VAT (15%)</span><span>$ 339.75</span></div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Subtotal</span><span>${curSym}1,500.00</span></div>
+              ${showDisc ? `<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Discount</span><span style="color:#16a34a;">${curSym}0.00</span></div>` : ""}
+              ${showTax ? `<div style="display:flex;justify-content:space-between;"><span>VAT (15%)</span><span>${curSym}225.00</span></div>` : ""}
             </div>
             <div style="border-top:2px solid ${pCol};padding-top:8px;display:flex;justify-content:space-between;font-weight:800;font-size:15px;color:${aCol};">
               <span>TOTAL DUE</span>
-              <span>$ 2,519.75</span>
+              <span>${curSym}1,725.00</span>
             </div>
           </div>
         </div>
 
-        <!-- Footer -->
+        <!-- Footer (template-level) -->
         <div style="margin-top:18px;text-align:center;font-size:10px;color:#94a3b8;border-top:1px dashed #e2e8f0;padding-top:10px;">
           ${esc(footer)}
         </div>
@@ -425,12 +544,6 @@
     el = document.getElementById("itFormShowTax"); if (el) el.checked = t.show_tax_column !== false;
     el = document.getElementById("itFormShowDisc"); if (el) el.checked = t.show_discount_column !== false;
     el = document.getElementById("itFormShowCode"); if (el) el.checked = !!t.show_item_code;
-    el = document.getElementById("itFormBankName"); if (el) el.value = t.bank_name || "";
-    el = document.getElementById("itFormBankAccName"); if (el) el.value = t.bank_account_name || "";
-    el = document.getElementById("itFormBankAcc"); if (el) el.value = t.bank_account_number || "";
-    el = document.getElementById("itFormBranchCode"); if (el) el.value = t.bank_branch_code || "";
-    el = document.getElementById("itFormSwift"); if (el) el.value = t.bank_swift_bic || "";
-    el = document.getElementById("itFormTerms"); if (el) el.value = t.payment_terms_note || "";
     el = document.getElementById("itFormFooter"); if (el) el.value = t.footer_note || "";
     el = document.getElementById("itFormIsDefault"); if (el) el.checked = !!t.is_default;
 
@@ -441,12 +554,14 @@
     }
 
     updateLivePreview();
-    // Scroll the designer panel into view
     var formCard = document.getElementById("itFormCard");
     if (formCard) formCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
   // ── Save template ─────────────────────────────────────────
+  // Only saves template-level design fields.
+  // Banking details and payment terms are NOT saved here —
+  // they are read from the company profile at invoice creation time.
   async function saveTemplate() {
     const cid = getCid();
     const name = (document.getElementById("itFormName") || {}).value;
@@ -466,12 +581,6 @@
       show_tax_column: (document.getElementById("itFormShowTax") || {}).checked,
       show_discount_column: (document.getElementById("itFormShowDisc") || {}).checked,
       show_item_code: (document.getElementById("itFormShowCode") || {}).checked,
-      bank_name: ((document.getElementById("itFormBankName") || {}).value || "").trim(),
-      bank_account_name: ((document.getElementById("itFormBankAccName") || {}).value || "").trim(),
-      bank_account_number: ((document.getElementById("itFormBankAcc") || {}).value || "").trim(),
-      bank_branch_code: ((document.getElementById("itFormBranchCode") || {}).value || "").trim(),
-      bank_swift_bic: ((document.getElementById("itFormSwift") || {}).value || "").trim(),
-      payment_terms_note: ((document.getElementById("itFormTerms") || {}).value || "").trim(),
       footer_note: ((document.getElementById("itFormFooter") || {}).value || "").trim(),
       is_default: (document.getElementById("itFormIsDefault") || {}).checked,
     };
@@ -532,7 +641,6 @@
   function injectLayout() {
     var screen = document.getElementById("screen-invoice-templates");
     if (!screen) return;
-    // Check if already injected
     if (document.getElementById("itMainLayout")) return;
 
     // Remove the max-width constraint to make it full-screen
@@ -540,7 +648,9 @@
     screen.style.padding = "0";
     screen.style.background = "#f6f8fb";
 
-    // Build the new layout HTML
+    // Build the new layout HTML — NO banking details or payment terms
+    // in the designer form. Those are invoice-level settings read from
+    // the company profile, not template-level design choices.
     screen.innerHTML = `
       <!-- Hero Header -->
       <div style="background:linear-gradient(135deg,#0F2A3D,#1e3a5f);color:#fff;padding:20px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
@@ -548,7 +658,7 @@
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#2dd4bf;font-weight:700;margin-bottom:4px;">Receivables &middot; Brand Identity</div>
           <h2 style="font-size:22px;font-weight:900;margin:0;color:#fff;">Invoice Templates &amp; Customization</h2>
           <p style="font-size:13px;color:rgba(255,255,255,.7);margin:4px 0 0;max-width:600px;">
-            Design custom invoice templates with live preview. Changes update instantly as you type.
+            Design custom invoice templates with live preview. Company details, banking, and payment terms are auto-filled from your company profile.
           </p>
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
@@ -635,7 +745,7 @@
               <!-- Display Options -->
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
                 <label style="display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:8px;border:1px solid #e2e8f0;cursor:pointer;font-size:12px;">
-                  <input type="checkbox" id="itFormShowLogo" checked /> Show Logo
+                  <input type="checkbox" id="itFormShowLogo" checked /> Show Logo / Company Name
                 </label>
                 <label style="display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:8px;border:1px solid #e2e8f0;cursor:pointer;font-size:12px;">
                   <input type="checkbox" id="itFormShowTax" checked /> Show Tax Column
@@ -658,43 +768,15 @@
                 </select>
               </div>
 
-              <!-- Banking Details -->
-              <div style="padding:12px;background:#fff;border-radius:12px;border:1px solid #e2e8f0;">
-                <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:10px;">🏦 Banking Details</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                  <div>
-                    <label style="display:block;font-size:10px;color:#64748b;margin-bottom:3px;">Bank Name</label>
-                    <input id="itFormBankName" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;" placeholder="e.g. FNB" />
-                  </div>
-                  <div>
-                    <label style="display:block;font-size:10px;color:#64748b;margin-bottom:3px;">Account #</label>
-                    <input id="itFormBankAcc" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;" placeholder="62001122334" />
-                  </div>
-                  <div>
-                    <label style="display:block;font-size:10px;color:#64748b;margin-bottom:3px;">Account Holder</label>
-                    <input id="itFormBankAccName" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;" placeholder="Company Name" />
-                  </div>
-                  <div>
-                    <label style="display:block;font-size:10px;color:#64748b;margin-bottom:3px;">Branch Code</label>
-                    <input id="itFormBranchCode" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;" placeholder="250655" />
-                  </div>
-                  <div style="grid-column:1 / -1;">
-                    <label style="display:block;font-size:10px;color:#64748b;margin-bottom:3px;">SWIFT / BIC Code</label>
-                    <input id="itFormSwift" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;" placeholder="FIRNZAJJ" />
-                  </div>
-                </div>
+              <!-- Footer Message (template-level) -->
+              <div>
+                <label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:4px;">Footer Message</label>
+                <textarea id="itFormFooter" rows="2" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;resize:vertical;" placeholder="Thank you for your business!"></textarea>
               </div>
 
-              <!-- Terms & Footer -->
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                <div>
-                  <label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:4px;">Payment Terms</label>
-                  <textarea id="itFormTerms" rows="2" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;resize:vertical;" placeholder="Payment due within 30 days."></textarea>
-                </div>
-                <div>
-                  <label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:4px;">Footer Message</label>
-                  <textarea id="itFormFooter" rows="2" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;resize:vertical;" placeholder="Thank you for your business!"></textarea>
-                </div>
+              <!-- Info note: banking & payment terms are NOT template-level -->
+              <div style="padding:10px 12px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;font-size:11px;color:#0369a1;line-height:1.5;">
+                ℹ️ <strong>Company name, VAT number, banking details, currency,</strong> and <strong>payment terms</strong> are automatically read from your company profile when an invoice is created or issued. They are not part of the template design.
               </div>
 
               <!-- Set as default -->
@@ -771,25 +853,11 @@
       });
     }
 
-    // Palette chips (also re-bound by renderColorChips)
-    document.querySelectorAll(".it-palette-chip").forEach(function(chip) {
-      chip.addEventListener("click", function() {
-        var c = chip.dataset.color;
-        if (c && pColor && pHex) {
-          pColor.value = c;
-          pHex.value = c;
-          updateLivePreview();
-        }
-      });
-    });
-
-    // All form inputs update preview live
+    // All form inputs update preview live (only template-level fields now)
     var inputIds = [
       "itFormName", "itFormFont", "itFormLogoAlign",
       "itFormShowLogo", "itFormShowTax", "itFormShowDisc", "itFormShowCode",
-      "itFormBankName", "itFormBankAcc", "itFormBankAccName",
-      "itFormBranchCode", "itFormSwift",
-      "itFormTerms", "itFormFooter",
+      "itFormFooter",
     ];
     inputIds.forEach(function(id) {
       var el = document.getElementById(id);
@@ -825,7 +893,11 @@
     // Inject the new full-screen layout (replaces the old HTML)
     injectLayout();
 
-    // Fetch data
+    // Load company context (company name, currency, banking, etc.)
+    // from dashboard.js globals + bank_accounts API
+    await loadCompanyContext();
+
+    // Fetch templates
     await fetchTemplates();
 
     // Render content
