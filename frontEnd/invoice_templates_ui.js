@@ -826,6 +826,13 @@
   function bindEvents() {
     var form = document.getElementById("itCustomizerForm");
 
+    if (form && !form.dataset.bound) {
+      form.dataset.bound = "true";
+
+      form.addEventListener("submit", function(e) {
+        e.preventDefault();
+      });
+    }
     // Sync color inputs
     var pColor = document.getElementById("itFormPrimaryColor");
     var pHex = document.getElementById("itFormPrimaryHex");
@@ -868,11 +875,30 @@
     });
 
     // Save button
+    // Save button — prevent duplicate submissions and duplicate listeners
     var saveBtn = document.getElementById("itSaveBtn");
-    if (saveBtn) {
-      saveBtn.addEventListener("click", function(e) {
+
+    if (saveBtn && !saveBtn.dataset.bound) {
+      saveBtn.dataset.bound = "true";
+
+      saveBtn.addEventListener("click", async function(e) {
         e.preventDefault();
-        saveTemplate();
+
+        if (saveBtn.dataset.saving === "true") return;
+
+        saveBtn.dataset.saving = "true";
+        saveBtn.disabled = true;
+
+        var originalText = saveBtn.textContent;
+
+        try {
+          saveBtn.textContent = "Saving...";
+          await saveTemplate();
+        } finally {
+          saveBtn.dataset.saving = "false";
+          saveBtn.disabled = false;
+          saveBtn.textContent = originalText;
+        }
       });
     }
 
