@@ -177559,21 +177559,193 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ORDER BY period_start DESC, id DESC;
         """, (int(company_id),))
 
+    def _payroll_resolve_payment_date(
+        self,
+        company_id: int,
+        period_end,
+        *,
+        schema: str | None = None,
+    ):
+        """
+        Re-derive the canonical payment_date for a payroll period from
+        company settings, using the SAME logic as
+        payroll_calendars_generate().
+
+        Returns None if settings are incomplete (caller should fall back
+        to whatever was stored on the calendar row).
+        """
+        company_id = int(company_id)
+
+        if not period_end:
+            return None
+
+        if isinstance(period_end, str):
+            period_end = date.fromisoformat(period_end[:10])
+        elif not isinstance(period_end, date):
+            return None
+
+        if schema is None:
+            schema = self.company_schema(company_id)
+
+        settings = self.payroll_settings_get(company_id) or {}
+
+        payment_rule = settings.get("payment_day_rule")
+        if not payment_rule:
+            return None
+
+        payment_offset_value = settings.get("payment_month_offset")
+        payment_offset = (
+            int(payment_offset_value) if payment_offset_value is not None else 0
+        )
+        if payment_offset < 0 or payment_offset > 12:
+            payment_offset = 0
+
+        adjustment = settings.get("payment_adjustment") or "none"
+
+        # ---- Compute payment month from period_end (NOT period_start) ----
+        payment_month = self._payroll_add_months(
+            date(period_end.year, period_end.month, 1),
+            payment_offset,
+        )
+
+        payment_date = self._payroll_payment_date(
+            payment_month,
+            payment_rule,
+        )
+
+        # Safety net: if the rule resolves to a date before period_end,
+        # push it one month forward (mirrors the generator).
+        if payment_date < period_end:
+            payment_month = self._payroll_add_months(payment_month, 1)
+            payment_date = self._payroll_payment_date(
+                payment_month,
+                payment_rule,
+            )
+
+        # ---- Weekend / holiday adjustment (mirrors generator) ----
+        if adjustment in {"next_workday", "previous_workday", "nearest_workday"}:
+            h_direction = {
+                "next_workday": "forward",
+                "previous_workday": "backward",
+                "nearest_workday": "nearest",
+            }[adjustment]
+
+            payment_date = self._payroll_next_workday(
+                payment_date,
+                schema,
+                company_id,
+                h_direction,
+            )
+
+        return payment_date
+
     def payroll_calendar_create(self, company_id: int, data: dict):
+        """
+        Create a payroll pay calendar row.
+
+        NEW: validates that payment_date is not earlier than period_end.
+        If the caller passes an early payment_date (or omits it), the
+        payment_date is recomputed from company payroll settings via
+        _payroll_resolve_payment_date() so the row is always consistent.
+        """
+        company_id = int(company_id)
         schema = self.company_schema(company_id)
+
+        period_start_raw = data.get("period_start")
+        period_end_raw = data.get("period_end")
+        payment_date_raw = data.get("payment_date")
+
+        # Normalise to date objects for comparison
+        def _to_date(v):
+            if v is None:
+                return None
+            if isinstance(v, date):
+                return v
+            s = str(v).strip()
+            if not s:
+                return None
+            return date.fromisoformat(s[:10])
+
+        period_end_d = _to_date(period_end_raw)
+        payment_date_d = _to_date(payment_date_raw)
+
+        resolved_payment_date = payment_date_raw  # default: trust caller
+
+        # If the caller's payment_date precedes period_end, recompute
+        # from settings rather than storing the bad value.
+        if (
+            period_end_d is not None
+            and payment_date_d is not None
+            and payment_date_d < period_end_d
+        ):
+            recomputed = self._payroll_resolve_payment_date(
+                company_id,
+                period_end_d,
+                schema=schema,
+            )
+            if recomputed is not None:
+                resolved_payment_date = recomputed
+                try:
+                    current_app.logger.warning(
+                        "[payroll_calendar_create] caller passed "
+                        "payment_date=%s which is before period_end=%s; "
+                        "recomputed to %s from settings (company=%s)",
+                        payment_date_d,
+                        period_end_d,
+                        recomputed,
+                        company_id,
+                    )
+                except Exception:
+                    print(
+                        f"[payroll_calendar_create] WARNING: caller passed "
+                        f"payment_date={payment_date_d} before "
+                        f"period_end={period_end_d}; recomputed to "
+                        f"{recomputed} from settings (company={company_id})"
+                    )
+            else:
+                # Settings incomplete — fall back to period_end so the
+                # row is at least internally consistent.
+                resolved_payment_date = period_end_raw
+                try:
+                    current_app.logger.warning(
+                        "[payroll_calendar_create] caller passed "
+                        "payment_date=%s before period_end=%s AND "
+                        "settings incomplete; defaulting payment_date "
+                        "to period_end (company=%s)",
+                        payment_date_d,
+                        period_end_d,
+                        company_id,
+                    )
+                except Exception:
+                    print(
+                        f"[payroll_calendar_create] WARNING: incomplete "
+                        f"settings; defaulting payment_date to "
+                        f"period_end={period_end_raw} (company={company_id})"
+                    )
+
+        # If caller omitted payment_date entirely, derive it.
+        if resolved_payment_date is None and period_end_d is not None:
+            recomputed = self._payroll_resolve_payment_date(
+                company_id,
+                period_end_d,
+                schema=schema,
+            )
+            if recomputed is not None:
+                resolved_payment_date = recomputed
 
         return self.fetch_one(f"""
             INSERT INTO {schema}.payroll_pay_calendars (
-                company_id, frequency, period_start, period_end, payment_date, status
+                company_id, frequency, period_start, period_end,
+                payment_date, status
             )
             VALUES (%s,%s,%s,%s,%s,%s)
             RETURNING *;
         """, (
-            int(company_id),
+            company_id,
             data.get("frequency") or "monthly",
-            data.get("period_start"),
-            data.get("period_end"),
-            data.get("payment_date"),
+            period_start_raw,
+            period_end_raw,
+            resolved_payment_date,
             data.get("status") or "open",
         ))
 
@@ -178602,25 +178774,26 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         """
         Create (or return) the payroll run for a pay calendar.
 
-        Versioning rules:
-          * No run for the calendar            -> create version 1 (as before).
-          * Run exists and is NOT reversed     -> return it (already_existed).
-          * Run exists and IS reversed:
-              - allow_replacement=False (default)
-                    -> return the reversed run unchanged, plus
-                       replacement_required=True so old callers keep working.
-              - allow_replacement=True  -> create a NEW version row in
-                    payroll_runs for the same calendar, linked to the
-                    original via supersedes_run_id. The reversed version is
-                    never modified, cleared or re-posted.
+        NEW: before copying cal["payment_date"] into the new run, sanity
+        check it against period_end. If the calendar's stored payment_date
+        is earlier than period_end (legacy generator bug or bad manual
+        entry), recompute it via _payroll_resolve_payment_date() and write
+        a warning into the run's audit trail so the discrepancy is
+        traceable.
+
+        Versioning rules (unchanged):
+        * No run for the calendar            -> create version 1.
+        * Run exists and is NOT reversed     -> return it.
+        * Run exists and IS reversed:
+            - allow_replacement=False       -> return + replacement_required.
+            - allow_replacement=True        -> create new version via
+                                                _payroll_create_replacement_version.
         """
         company_id = int(company_id)
         pay_calendar_id = int(pay_calendar_id)
 
         schema = self.company_schema(company_id)
 
-        # Current version for this calendar (is_current_version is unique
-        # per calendar while TRUE — see company_36_payroll_runs_current_uniq).
         existing = self.fetch_one(f"""
             SELECT *
             FROM {schema}.payroll_runs
@@ -178665,8 +178838,64 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 user_id=user_id,
             )
 
-        # ---- original path: first version for this calendar ----------------
-        return self.fetch_one(f"""
+        # ---- NEW: defensive payment_date resolution ---------------------
+        cal_payment_date = cal.get("payment_date")
+        cal_period_end = cal.get("period_end")
+
+        def _to_date(v):
+            if v is None:
+                return None
+            if isinstance(v, date):
+                return v
+            s = str(v).strip()
+            if not s:
+                return None
+            return date.fromisoformat(s[:10])
+
+        cal_payment_date_d = _to_date(cal_payment_date)
+        cal_period_end_d = _to_date(cal_period_end)
+
+        run_payment_date = cal_payment_date
+        payment_date_recomputed = False
+
+        if (
+            cal_period_end_d is not None
+            and cal_payment_date_d is not None
+            and cal_payment_date_d < cal_period_end_d
+        ):
+            # Calendar row carries a bad payment_date. Recompute from
+            # settings so the run (and every downstream journal /
+            # liability-payment screen) sees the correct date.
+            recomputed = self._payroll_resolve_payment_date(
+                company_id,
+                cal_period_end_d,
+                schema=schema,
+            )
+            if recomputed is not None:
+                run_payment_date = recomputed
+                payment_date_recomputed = True
+                try:
+                    current_app.logger.warning(
+                        "[payroll_run_create] calendar %s payment_date=%s "
+                        "precedes period_end=%s; recomputed to %s for "
+                        "run (company=%s, calendar=%s)",
+                        pay_calendar_id,
+                        cal_payment_date_d,
+                        cal_period_end_d,
+                        recomputed,
+                        company_id,
+                        pay_calendar_id,
+                    )
+                except Exception:
+                    print(
+                        f"[payroll_run_create] WARNING: calendar "
+                        f"{pay_calendar_id} payment_date="
+                        f"{cal_payment_date_d} precedes period_end="
+                        f"{cal_period_end_d}; recomputed to {recomputed}"
+                    )
+
+        # ---- original path: first version for this calendar -------------
+        new_run = self.fetch_one(f"""
             INSERT INTO {schema}.payroll_runs (
                 company_id,
                 pay_calendar_id,
@@ -178690,8 +178919,53 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             cal["period_end"],
             cal["period_start"],
             cal["period_end"],
-            cal["payment_date"],
+            run_payment_date,
         ))
+
+        # ---- Audit the recomputation if it happened ---------------------
+        if payment_date_recomputed and new_run:
+            try:
+                self.payroll_run_audit_add(
+                    company_id,
+                    int(new_run["id"]),
+                    "payment_date_recomputed",
+                    from_status=None,
+                    to_status="draft",
+                    message=(
+                        f"Calendar payment_date {cal_payment_date_d} "
+                        f"preceded period_end {cal_period_end_d}; "
+                        f"recomputed to {run_payment_date} from "
+                        f"payroll settings."
+                    ),
+                    metadata={
+                        "calendar_id": pay_calendar_id,
+                        "calendar_payment_date": (
+                            str(cal_payment_date_d)
+                            if cal_payment_date_d else None
+                        ),
+                        "period_end": (
+                            str(cal_period_end_d)
+                            if cal_period_end_d else None
+                        ),
+                        "recomputed_payment_date": str(run_payment_date),
+                    },
+                    user_id=user_id,
+                )
+            except Exception:
+                # Audit failure must not break run creation.
+                try:
+                    current_app.logger.exception(
+                        "[payroll_run_create] audit_log for "
+                        "payment_date_recomputed failed"
+                    )
+                except Exception:
+                    print(
+                        "[payroll_run_create] audit_log for "
+                        "payment_date_recomputed failed"
+                    )
+
+        return new_run
+
 
     def _payroll_create_replacement_version(
         self,
